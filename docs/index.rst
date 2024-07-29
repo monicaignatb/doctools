@@ -23,3 +23,4 @@ Contents
    cli
    ci
    theme
+   academic
