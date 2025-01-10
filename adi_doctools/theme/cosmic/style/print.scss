@@ -1,0 +1,62 @@
+@media not print {
+    .only-print {
+        display: none !important;
+    }
+}
+
+@media print {
+    body {
+        font-size: .8rem;
+    }
+
+    .only-screen {
+        display: none !important;
+    }
+
+    header #left, header .reverse {
+        display: none !important;
+    }
+
+    body .highlight {
+        background: none;
+        border: 1px solid var(--text-color3);
+    }
+
+    .code-shell {
+        background: none;
+        border: 1px solid var(--text-color3);
+
+        .highlight {
+            border: none;
+        }
+    }
+
+    .highlight {
+        pre {
+            font-size: 0.8em;
+        }
+    }
+
+    .body {
+        padding: 0;
+    }
+
+    .sphinxsidebar,
+    .repotoc-tree.overlay,
+    .banner, .search-area, .reverse,
+    #scroll-up {
+        display: none;
+    }
+
+    #right > span {
+        width: 100%;
+    }
+
+    h1 {
+        break-before: always
+    }
+
+    .tocwrapper ul li a {
+        width: 100%;
+    }
+}

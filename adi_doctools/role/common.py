@@ -1,35 +1,53 @@
+from typing import Tuple, List
+from types import ModuleType
+
 import subprocess
 from docutils import nodes
+from docutils.utils import Reporter
+from docutils.nodes import Node, system_message
 from sphinx.util import logging
+from sphinx.util.docutils import SphinxRole, CustomReSTDispatcher
+from sphinx.util.typing import RoleFunction
 
 logger = logging.getLogger(__name__)
-validate_links_user_agent = 'Status resolver (Python/Sphinx)'
 
 # Default values
-dft_url_dokuwiki = 'https://wiki.analog.com'
-dft_url_ez = 'https://ez.analog.com'
-dft_url_mw = 'https://www.mathworks.com'
-dft_url_git = 'https://github.com/analogdevicesinc'
-dft_url_adi = 'https://www.analog.com'
-dft_url_xilinx = 'https://www.xilinx.com'
-dft_url_intel = 'https://www.intel.com'
+dft_url = {
+    'dokuwiki': 'https://wiki.analog.com',
+    'ez': 'https://ez.analog.com',
+    'mw': 'https://www.mathworks.com',
+    'digikey': 'https://www.digikey.com/scripts/DkSearch/dksus.dll?KeywordSearch?Site=US&Keywords=',
+    'mouser': 'https://www.mouser.com/c/?q=',
+    'arrow': 'https://www.arrow.com/en/products/search?q=',
+    'git_gui': 'https://github.com/analogdevicesinc/{repo}/tree',
+    'git_raw': 'https://raw.githubusercontent.com/analogdevicesinc/{repo}',
+    'git_other': 'https://github.com/analogdevicesinc/{repo}/{other}',
+    'git_down': 'https://analogdevicesinc.github.io/DownGit/#/home?url={url}',
+    'adi': 'https://www.analog.com',
+    'xilinx': 'https://www.xilinx.com',
+    'intel': 'https://www.intel.com',
+}
 
-dft_validate_links = False
-
-git_repos = [
-    # url_path           name
-    ['hdl',              "HDL"],
-    ['testbenches',      "Testbenches"],
-    ['linux',            "Linux"],
-    ['no-OS',            "no-OS"],
-    ['libiio',           "libiio"],
-    ['scopy',            "Scopy"],
-    ['iio-oscilloscope', "IIO Oscilloscope"],
-    ['doctools',         "Doctools"],
-    ['documentation',    "System Level Documentation"],
-    ['pyadi-iio',        "PyADI-IIO"]
-]
+git_repos = {
+    # case insensitive            url_path                     name
+    'hdl':                       ['hdl',                       "HDL"],
+    'testbenches':               ['testbenches',               "Testbenches"],
+    'linux':                     ['linux',                     "Linux"],
+    'no-os':                     ['no-OS',                     "no-OS"],
+    'libiio':                    ['libiio',                    "libiio"],
+    'scopy':                     ['scopy',                     "Scopy"],
+    'iio-oscilloscope':          ['iio-oscilloscope',          "IIO Oscilloscope"],
+    'doctools':                  ['doctools',                  "Doctools"],
+    'documentation':             ['documentation',             "System Level Documentation"],
+    'pyadi-iio':                 ['pyadi-iio',                 "PyADI-IIO"],
+    'meta-adi':                  ['meta-adi',                  "META-ADI"],
+    'wiki-scripts':              ['wiki-scripts',              "Wiki Scripts"],
+    'linux_image_adi-scripts':   ['linux_image_ADI-scripts',   "ADI Scripts for Linux images"],
+    'highspeedconvertertoolbox': ['HighSpeedConverterToolbox', "High Speed Converter Toolbox"],
+    'transceivertoolbox':        ['TransceiverToolbox',        "Transceiver Toolbox"]
+}
 vendors = ['xilinx', 'intel', 'mw']
+suppliers = ['digikey', 'mouser', 'arrow']
 
 
 def get_url_config(name, inliner):
@@ -59,8 +77,9 @@ def color(class_name):
 def datasheet():
     def role(name, rawtext, text, lineno, inliner, options={}, content=[]):
         # DEPRECATED
-        logger.info("The datasheet role has been deprecated, use the adi role "
-                    "instead.")
+        logger.warning("The datasheet role has been deprecated, use the adi role "
+                       "instead.",
+                       location=(inliner.document.settings.env.docname, lineno))
         return [], []
 
     return role
@@ -71,9 +90,10 @@ def dokuwiki():
         text, path = get_outer_inner(text)
         if text is None:
             text = path[path.rfind('/')+1:]
+        if len(path) > 0 and path[0] == '/':
+            path = path[1:]
         url = get_url_config('dokuwiki', inliner) + '/' + path
         node = nodes.reference(rawtext, text, refuri=url, **options)
-        add_link(inliner, lineno, url)
         return [node], []
 
     return role
@@ -89,48 +109,106 @@ def ez():
             text = "EngineerZone"
         node = nodes.reference(rawtext, text, refuri=url,
                                classes=['icon', 'ez'], **options)
-        add_link(inliner, lineno, url)
         return [node], []
 
     return role
 
 
-def get_active_branch_name():
-    try:
-        branch = subprocess.run(['git', 'branch',
-                                 '--show-current'], capture_output=True)
-        return branch.stdout.decode('utf-8').replace('\n', '')
-    except Exception:
-        # Return placeholder is git is unreachable, e.g. container
-        return "<unknown>"
+def get_default_brach(repo, inliner):
+    """
+    Get default branch for each repo.
+    If it is not known, returns 'main'
+    """
+    app = inliner.document.settings.env.app
+    if repo in app.lut['repos']:
+        return app.lut['repos'][repo]['branch']
+    else:
+        return 'main'
 
+class GitRoleDispatcher(CustomReSTDispatcher):
+    """Custom dispatcher for (down)git role.
 
-def git(repo, alt_name):
-    def role(name, rawtext, text, lineno, inliner, options={}, content=[]):
-        url = get_url_config('git', inliner) + '/' + repo
-        if text == '/':
-            name = "ADI " + alt_name + " repository"
-            node = nodes.reference(rawtext, name, refuri=url,
-                                   classes=['icon', 'git'], **options)
+    This enables :git-***: and :downgit-***: roles on parsing reST document.
+    """
+    def role(
+        self, role_name: str, language_module: ModuleType, lineno: int, reporter: Reporter,
+    ) -> Tuple[RoleFunction, List[system_message]]:
+        if len(role_name) > 4 and role_name.startswith(('git-')):
+            return GitRole(role_name, False), []
+        elif len(role_name) > 8 and role_name.startswith(('downgit-')):
+            return GitRole(role_name, True), []
         else:
-            text, path = get_outer_inner(text)
+            return super().role(role_name, language_module, lineno, reporter)
+
+
+class GitRole(SphinxRole):
+    """
+    Create links to git upstream.
+    Prefers knowns repositories, but will generate for other repositories
+    with a info note
+    """
+    def __init__(self, orig_name: str, down: bool) -> None:
+        self.orig_name = orig_name
+        self.down = down
+
+    def run(self) -> Tuple[List[Node], List[system_message]]:
+        assert self.name == self.orig_name.lower()
+        assert self.name.startswith('downgit-' if self.down else 'git-')
+        repo_ = self.orig_name[8 if self.down else 4:]
+        repo = repo_.lower()
+        text, path = get_outer_inner(self.text)
+
+        if repo not in git_repos:
+            alt_name = repo_
+            repo = self.orig_name[8 if self.down else 4:]
+        else:
+            alt_name = git_repos[repo][1]
+            repo = git_repos[repo][0]
+
+        pos = path.find('+')
+        if path[0:pos] == "raw":
+            type_ = "raw"
+            path = path[pos+1:]
+        elif path[0:pos] == "gui":
+            type_ = "gui"
+            path = path[pos+1:]
+        elif pos == len(path)-1:
+            type_ = path[:-1]
+            path = ''
+        else:
+            type_ = "gui"
+
+        if type_ in ['raw', 'gui']:
             pos = path.find(':')
             if pos in [0, -1]:
-                branch = get_active_branch_name()
+                branch = get_default_brach(repo, self.inliner)
             else:
                 branch = path[0:pos]
             path = path[pos+1:]
+            if text is None:
+                if path == '/' or path == '':
+                    text = "ADI " + alt_name + " repository"
+                    if branch != 'main':
+                        text += "'s branch " + branch
+                else:
+                    text = path
             if path == '/':
                 path = ''
-            if text is None:
-                text = path
-            url = url + '/blob/' + branch + '/' + path
-            node = nodes.reference(rawtext, text, refuri=url,
-                                   classes=['icon', 'git'], **options)
-        add_link(inliner, lineno, url)
-        return [node], []
 
-    return role
+            url = get_url_config('git_'+type_, self.inliner).format(repo=repo)
+            url = url + '/' + branch + '/' + path
+            if self.down:
+                url = get_url_config('git_down', self.inliner).format(url=url)
+        else:
+            if text is None:
+                    text = "ADI " + alt_name + " repository"
+                    if type_ != '':
+                        text += f" ({type_})"
+            url = get_url_config('git_other', self.inliner).format(repo=repo, other=type_)
+
+        node = nodes.reference(self.rawtext, text, refuri=url,
+                               classes=['icon', 'git'], **self.options)
+        return [node], []
 
 
 def adi():
@@ -141,7 +219,6 @@ def adi():
         url = get_url_config('adi', inliner) + '/' + adi_id
         node = nodes.reference(rawtext, name, refuri=url,
                                classes=['icon', 'adi'], **options)
-        add_link(inliner, lineno, url)
         return [node], []
 
     return role
@@ -154,132 +231,46 @@ def vendor(vendor_name):
             text = path[path.rfind('/')+1:]
         url = get_url_config(vendor_name, inliner) + '/' + path
         node = nodes.reference(rawtext, text, refuri=url, **options)
-        add_link(inliner, lineno, url)
         return [node], []
 
     return role
 
 
-def prepare_validade_links(app, env, docnames):
-    # Not managing links, so checking only changed files per build.
-    # A user can run a build with validate_links False, touch the
-    # desired files then run with validate_links True to check the links
-    # from only these files.
-    env.links = {}
+def supplier(supplier_name):
+    def role(name, rawtext, text, lineno, inliner, options={}, content=[]):
+        text, path = get_outer_inner(text)
+        if text is None:
+            text = path
+        url = get_url_config(supplier_name, inliner) + path
+        node = nodes.reference(rawtext, text, refuri=url, **options)
+        return [node], []
+
+    return role
 
 
-def validate_links(app, env):
-    if not env.config.validate_links:
-        logger.info(f"Skipping {len(env.links)} URLs checks-ups. "
-                    "Set validate_links to True to enable this feature.")
-        return
+def install_dispatcher(app, docname: str, source: List[str]) -> None:
+    """Enable GitRoleDispatcher.
 
-    global asyncio, aiohttp
-    import asyncio
-    import aiohttp
-
-    asyncio.run(
-        async_validate_links(app, env)
-    )
-
-
-async def validate_link(link, headers):
-    session_timeout = aiohttp.ClientTimeout(total=None, sock_connect=10,
-                                            sock_read=10)
-    try:
-        async with aiohttp.ClientSession(timeout=session_timeout) as session:
-            async with session.get(link, headers=headers, timeout=10) as resp:
-                return link, resp.status
-    except aiohttp.ClientError as e:
-        return link, e
-    except asyncio.TimeoutError as e:
-        return link, e
-
-
-async def async_validate_links(app, env):
-    headers = {'User-Agent': validate_links_user_agent}
-
-    fail_count = 0
-    total = len(env.links)
-    completed = 0
-    results = []
-    step = 25
-
-    links = list(env.links)
-    leng = int(total/step)+1 if total % step != 0 else int(total/step)
-    for i in range(0, leng):
-        cur = i*step
-        end = total if (i+1)*step > total else (i+1)*step
-        _links = links[cur:end]
-        tasks = []
-        for link in _links:
-            task = asyncio.create_task(validate_link(link, headers))
-            tasks.append(task)
-
-        for task in asyncio.as_completed(tasks):
-            results.append(await task)
-            completed += 1
-            logger.info(f"Validated URL {completed} out of {total}, "
-                        "bundle {i+1} of {leng}...", end='\r')
-        del tasks
-
-    for link, error in results:
-        if isinstance(error, asyncio.TimeoutError):
-            error = 'Timeout Error'
-        if error != 200:
-            fail_count += 1
-            if len(env.links[link]) > 1:
-                extended_error = (f"Resolved {len(env.links[link])} times, "
-                                  "path shown is the first instance.")
-            else:
-                extended_error = ""
-            logger.warning(f"URL {link} returned {error}! {extended_error}",
-                           location=env.links[link][0])
-
-    if fail_count:
-        c_ = fail_count/(len(env.links))*100
-        logger.warning(f"{fail_count} out of {len(env.links)} URLs resolved "
-                       f"with an error ({c_:0.2f}%)!")
-    else:
-        if total == 0:
-            extended_info = ("\nAt every build, only the links at files that "
-                             "changed are checked, consider touching them to "
-                             "re-check.")
-        else:
-            extended_info = ""
-        logger.info(f"All {total} URLs resolved successfully.{extended_info}")
-
-
-def add_link(inliner, lineno, link):
-    links = inliner.document.settings.env.links
-    docname = (inliner.document.current_source[:-4], lineno)
-    if link not in links:
-        links[link] = [docname]
-    else:
-        links[link].append(docname)
-
+    .. note:: The installed dispatcher will be uninstalled on disabling sphinx_domain
+              automatically.
+    """
+    dispatcher = GitRoleDispatcher()
+    dispatcher.enable()
 
 def common_setup(app):
     app.add_role("red",             color('red'))
     app.add_role("green",           color('green'))
     app.add_role("datasheet",       datasheet())
-    app.add_role("dokuwiki",        dokuwiki())
     app.add_role("ez",              ez())
     app.add_role("adi",             adi())
+    app.add_role("dokuwiki",            dokuwiki())
+    app.add_role("dokuwiki+deprecated", dokuwiki())
     for name in vendors:
-        app.add_role(name,          vendor(name))
-    for path, name in git_repos:
-        app.add_role("git-"+path,   git(path, name))
+        app.add_role(name, vendor(name))
+    for name in suppliers:
+        app.add_role(name, supplier(name))
 
-    app.connect('env-before-read-docs', prepare_validade_links)
-    app.connect('env-updated', validate_links)
+    for key in dft_url:
+        app.add_config_value('url_' + key, dft_url[key], 'env')
 
-    app.add_config_value('url_dokuwiki',  dft_url_dokuwiki,  'env')
-    app.add_config_value('url_ez',        dft_url_ez,        'env')
-    app.add_config_value('url_mw',        dft_url_mw,        'env')
-    app.add_config_value('url_git',       dft_url_git,       'env')
-    app.add_config_value('url_adi',       dft_url_adi,       'env')
-    app.add_config_value('url_xilinx',    dft_url_xilinx,    'env')
-    app.add_config_value('url_intel',     dft_url_intel,     'env')
-
-    app.add_config_value('validate_links', dft_validate_links, 'env')
+    app.connect('source-read', install_dispatcher)

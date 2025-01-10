@@ -1,40 +1,104 @@
-@import "mixin_links";
+@use "sass:list";
+@use "mixin_links";
+
+a {
+    text-decoration: none;
+    color: inherit;
+}
+
+.body {
+    p a, a.reference.internal:not(.image-reference), aside a, .line-block a {
+        color: var(--accent-color);
+        border-bottom: 1px solid rgba(125, 125, 125, .25);
+    }
+
+    p a:hover, a.reference.internal:hover, aside a:hover, .line-block a:hover {
+        border-color: var(--text-color2);
+    }
+}
 
 a.icon {
     margin: 0;
     position: relative;
     margin-top: 0;
-    padding-left: 1.5rem;
-    padding-top: .5rem;
+    padding-left: 1.5em;
+    padding-top: .5em;
 
     /* Our fancy icon */
     &::before {
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
         content: "";
         position: absolute;
-        left: 0rem;
-        top: .25rem;
-        width: 1.5rem;
-        height: 1.5rem;
+        left: 0em;
+        top: .25em;
+        width: 1.5em;
+        height: 1.5em;
     }
 }
 
 /* Default styles */
-a.icon {
-    &::before {
-        background-color: var(--color-link-title);
-        mask-image: var(--icon-link-default);
-        mask-repeat: no-repeat;
+@media screen {
+    a.icon {
+        &::before {
+            background-color: var(--color-link-title);
+            mask-image: var(--icon-link-default);
+            mask-repeat: no-repeat;
+        }
+    }
+}
+
+@media print {
+    a.icon {
+        &::before {
+            background-image: var(--icon-link-default);
+        }
     }
 }
 
 /* Variants */
-a.icon {
-    @each $type, $value in $links {
-        &.#{$type} {
-            &::before {
-                background-color: var(--color-link-title--#{$type});
-                mask-image: var(--icon-#{nth($value, 2)});
+@media screen {
+    a.icon {
+        @each $type, $value in mixin_links.$links {
+            &.#{$type} {
+                &::before {
+                    background-color: var(--color-link-title--#{$type});
+                    mask-image: var(--icon-#{list.nth($value, 2)});
+                }
             }
         }
     }
+}
+
+@media print {
+    a.icon {
+        @each $type, $value in mixin_links.$links {
+            &.#{$type} {
+                &::before {
+                    background-image: var(--icon-#{list.nth($value, 2)});
+                }
+            }
+        }
+    }
+}
+
+/* Headerlinks */
+.headerlink {
+    color: var(--accent-color);
+    transition: opacity ease .125s;
+    margin-left: .25em;
+    user-select: none;
+    opacity: 0;
+
+    &:after {
+        content: '#';
+    }
+}
+
+:is(h1, h2, h3, h4, h5, h6):hover .headerlink,
+.literal-block-wrapper:hover .headerlink,
+.sig-object:hover .headerlink,
+figure:hover .headerlink,
+table:hover .headerlink {
+    opacity: 1;
 }

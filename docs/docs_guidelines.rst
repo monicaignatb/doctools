@@ -10,6 +10,40 @@ A brief set-of-rules for the documentation.
    importing text from there, consider the automated options that are provided
    in this page to convert it to reST.
 
+Importing from DokuWiki to Sphinx
+--------------------------------------------------------------------------------
+
+Use the following command to import a DokuWiki page (old *wiki.analog.com*):
+
+.. code:: bash
+
+   pandoc imported.txt -f dokuwiki -t rst --columns=80 -s -o imported.rst --list-tables
+
+The :code:`list-tables` parameter requires *pandoc-types* >= 1.23, included in any
+recent `pandoc release <https://github.com/jgm/pandoc/releases>`__;
+if it is not an option, you shall remove it and export in the *grid* table
+format (see :ref:`tables` for more information).
+
+After converting, update it to better conform with the guidelines below, and
+make sure to use our directives and roles, for example, the :ref:`role git`.
+
+To speed thing up, combine with wget:
+
+.. code:: bash
+
+   wikifile=resources/eval/user-guides/adrv9009/adrv9009
+   outfile=output.rst
+
+   wget -O - https://wiki.analog.com/$wikifile?do=export_raw --no-verbose | \
+     pandoc -f dokuwiki -t rst --columns=80 -s -o $outfile --list-tables
+
+Also, consider recording macros in your favorite text editor to automate
+repetitive steps.
+
+There is also the
+`DokuWiki to Sphinx (bash.sh) <https://gist.github.com/gastmaier/9d9c8281dc3c8551991a857cdb2692cc>`__
+to further help importing.
+
 Indentation
 --------------------------------------------------------------------------------
 
@@ -29,9 +63,7 @@ volumes of a book, and it does not make sense to have multiple "volumes" at
 the repository level.
 
 The only exception is the :git-documentation:`/`, which indeed contains various
-types of documentation (eval-boards, university program, Linux drivers, etc.);
-and it uses the ``topic`` field at ``lut.py`` to keep track of
-each.
+types of documentation (eval-boards, university program, Linux drivers, etc.).
 
 The ``toctree`` directive has the following format:
 
@@ -75,6 +107,19 @@ Also, it is recommended to wrap the toctree in a "Contents" section:
 
       some_page
 
+For extensive documentation with different topics, it makes sense to filter
+the toctree based on the current topic/toctree title.
+This is possible by setting the environment variable ``ADOC_FILTER_TOCTREE`` to
+``1``.
+Alternatively, setting ``filter_toctree`` on ``conf.py`` has higher precedence
+than ``ADOC_FILTER_TOCTREE``.
+And is supposed to be used alongside the ``topic`` field at ``lut.py`` to
+preserve high level links for each topic.
+
+Enable this environment variable only on the release build, since writing pages
+with it enabled may be obnoxious and confusing prior the final structure/location
+of them.
+
 .. _version:
 
 Versioning
@@ -90,47 +135,191 @@ Still, the ``version`` value on ``conf.py`` has higher precedence, and
 The CI, in general, should set ``ADOC_DOC_VERSION`` as the current checkout branch
 in the pipeline (e.g. ``main``, ``v1.0.0``).
 
+.. tip::
+
+   If creating a branch or PR output, consider using GitHub short reference
+   ``${{ github.ref_name }}``.
+
 If both environment variable and ``version`` on ``conf.py`` are unset, it defaults
 to an empty string.
 
-References
+Also, set ``ADOC_TARGET_DEPTH`` to match the final destination depth, for example,
+if the target directory is:
+
+* *./*: ``0`` or unset
+* *./v2.2*: ``1``
+* *./prs/1234*: ``2``
+* *./staging/user/branch*: ``3``
+
+Exporting to PDF
 --------------------------------------------------------------------------------
 
-References have the format ``library/project context``, e.g.
-:code:`:ref:\`vivado block-diagrams\`` renders as :ref:`vivado block-diagrams`.
-Notice how neither *library* nor *project* are present in the label, since there is no
-naming collision between libraries or projects (no project will ever be named
-*axi_dmac*).
+The whole documentation can be exported to a PDF document for a more compact
+format using either rs2pdf or WeasyPrint.
+This is done by setting the environment variable called
+``ADOC_MEDIA_PRINT`` (the value does not matter) and building the documentation.
 
-Also, for project, libraries and IPs, the names should be exactly the
-name of its folders, e.g. ``axi_pwm_gen`` and not ``axi-pwm-gen`` or ``AXI_PWM_GEN``,
-this helps avoid broken references.
+For rst2pdf, use:
+
+.. shell::
+
+   ~/some_repository/docs
+   sphinx-build -b pdf . _build/pdfbuild
+
+In the output folder, you’ll find a PDF document named after the repository
+(e.g. Doctools.pdf). This document includes an auto-generated cover, followed by
+the remaining pages. Note that an HTML build of the documentation is not
+required for the PDF build.
+
+.. warning::
+
+   The enviroment variable ``ADOC_MEDIA_PRINT`` should be unset when building
+   the HTML pages of documentation. If not set, some components of the pages
+   may not render properly.
+
+Alternatively, WeasyPrint can be used with :ref:`author-mode` with this command:
+
+.. shell::
+
+   ~/some_repository/docs
+   $adoc author-mode --directory . --builder pdf
+
+The advantage of WeasyPrint is that the design styles (CSS stylesheet) is
+respected.
+
+Inner working
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Internally, ``ADOC_MEDIA_PRINT`` variable is set to ``app.config.media_print``
+and should be used in scenarios where it is explicitly needed to compile the
+content in a different manner than for the **hosted** html.
+For example, to render content during build that would instead be rendered with
+third-party JavaScript libraries in the user browser.
+
+Still, another approach is to patch the generated html, like is done at
+:git-doctools:`adi_doctools/cli/aux_print.py` for :ref:`author-mode` and
+:ref:`custom-doc` with pdf builders.
+
+.. _local_refs:
+
+Local references
+--------------------------------------------------------------------------------
+
+References to labels have the format :code:`:ref:\`context topic\``, e.g.
+:code:`:ref:\`role git\`` renders as :ref:`role git`.
+
+Labels are created for any content with the syntax
+(dot-dot underscore<label>two-dots):
+
+.. code:: rst
+
+   .. _context topic:
+
+.. hint::
+
+   Add labels to any content that may be linked, locally or
+   :ref:`externally <inter-refs>`.
+
+References to docs have the format :code:`:doc:\`path/to/doc\``, e.g.
+:code:`:doc:\`docs_guidelines\`` for *docs_guidelines.rst*.
 
 .. attention::
 
-   Do not break reference role between lines!
+   Do not break reference roles between lines!
    Even though Sphinx allows breaking line inside the reference role,
-   it makes pattern matching really hard.
+   it makes pattern matching hard.
 
-For resources without a particular source code file/folder, prefer hyphen ``-``
-separation, for example, ``spi_engine control-interface`` instead of
-``spi_engine control_interface``.
+Prefer hyphen separation ``-`` over undeline ``_`` for the "title" section,
+and always lower case,
+for example
+``my_code control-interface`` instead of ``MY_CODE Control_Interface``.
+
+Numbered references
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+References can be numbered by using
+`numref <https://www.sphinx-doc.org/en/master/usage/referencing.html#role-numref>`__,
+for example, "*see Figure 1*".
+
+To use this feature, enable on the *conf.py*:
+
+.. code-block:: python
+
+   numfig = True
+
+To customize the format, set ``numfig_format``:
+
+.. code-block:: python
+
+   numfig_format = {'figure': 'Figure %s',
+                    'table': 'Table %s',
+                    'code-block': 'Listing %s',
+                    'section': 'Section %s'}
+
+.. tip::
+
+   By default enumeration is global, so if the toctree is not
+   `numbered <https://www.sphinx-doc.org/en/master/usage/restructuredtext/directives.html#directive-option-toctree-numbered>`__ to divide the pages in numbered sections (e.g. *Figure 3.4.4*),
+   the numbering will "propagate" across page which may be counter-intuitive.
+
+   To have the numbering reset at every page, add ``numfig_per_doc = True`` to
+   *conf.py*.
+
+.. _inter-refs:
+
+External references
+--------------------------------------------------------------------------------
+
+External references to other Sphinx documentation are created using the built-in
+``sphinx.ext.intersphinx`` extension.
+
+To setup **in-organization** references read the :ref:`section below <in-org-ref>`,
+and for **third-party** docs, the section :ref:`that follows <out-org-ref>`.
+
+| For either, to create a reference to a **label**, use:
+| :code:`:external+inv:ref:\`label\``, where ``inv`` is a mapped source,
+  for example, :code:`:external+hdl:ref:\`spi_engine control-interface\``.
+
+| To create a reference to a **doc**, use:
+| :code:`:external+inv:doc:\`label\``, where ``inv`` is a mapped source,
+  for example, :code:`:external+hdl:doc:\`library/spi_engine/index\``.
+
+As the other roles, it is possible to customize the text, e.g.
+:code:`:external+hdl:ref:\`Custom text <spi_engine control-interface>\``.
+
+.. tip::
+
+    Pay attention to the log output, since
+    a warnings is thrown for each reference not found.
+
+External references work with any kind of references, such as
+*ref*, *doc*, *envvar*, *token*, *term*, *numref* and *keyword*.
+
+| For references to **labels** it is possible to use the short form:
+| :code:`:ref-inv:\`label\`` (equivalent to :code:`:external+inv:ref:\`label\``),
+  but is discouraged.
+
+.. note::
+
+   Sphinx 8 allows the syntax :code:`:ref:\`<inv>:label\``,
+   which allows local references to have higher precedence than external
+   refs, useful for generating custom docs like user guides.
+   However, since some users may require Sphinx 7, use the former syntax,
+   and let :ref:`adoc <cli>` patch it when necessary.
+
+To show all links of an InterSphinx mapping file, use the built-in tool:
+
+.. code:: bash
+
+   python3 -m sphinx.ext.intersphinx https://analogdevicesinc.github.io/hdl/objects.inv
 
 .. _in-org-ref:
 
-In organization references
+In organization reference
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-For references to Sphinx docs inside the organization (repos listed in the repotoc),
-the ``ref`` role is extended with the syntax
-:code:`:ref-<external>:\`label\`` where ``external`` is a mapped source,
-for example, :code:`:ref-hdl:\`spi_engine control-interface\``.
-It is also possible to customize the text, e.g.
-:code:`:ref-hdl:\`Custom text <spi_engine control-interface>\``.
-
-A warning is thrown when a reference is not found.
-
-Repository mappings are enabled to the `conf.py` file with the following format:
+To create references to Sphinx docs inside the organization add the repositories
+of interest to the `conf.py` file with the following format:
 
 .. code:: python
 
@@ -140,62 +329,46 @@ For example:
 
 .. code:: python
 
-   interref_repos = ['hdl', 'no-OS']
+   interref_repos = ['hdl', 'no-OS', 'pyadi-iio/main']
 
-Version handling is done with the ``ADOC_INTERREF_TAGGED`` and
-``ADOC_INTERREF_RELEASE`` environment variables values, where:
+Notice that in the example ``main`` suffixes ``pyadi-iio``, this means that will
+look for the build at path ``main`` of this repo instead of at root.
+This can be used to target a specific version, if the target repository stores
+multiple, for example, ``v1.1``, more about that :ref:`ci-versioned`.
 
-* ``ADOC_INTERREF_TAG``: adds the tag as a suffix to the uri, e.g. ``main``,
-  ``v2.1.0``, set to enable.
-* ``ADOC_INTERREF_RELEASE``: unset to use the default branch (e.g. ``main``)
-  or set to use the latest release (e.g. ``v3.0.0``) as the tag.
+.. tip::
 
-Links are absolute if  version handling is disabled and symbolic if enabled,
-for example
-``www.analogdevicesinc.github.io/repo_b/other_topic/sub_topic/index.html#anchor``
-and
-``../../../repo_b/v3.7/other_topic/sub_topic/index.html#anchor``, respectively.
+   For even more freedom, you can setup with an explicit path as
+   an :ref:`out-org-ref`.
 
-The default branch is obtained from :git-doctools:`adi_doctools/lut.py`, and the
-latest release from ``tags.json`` at the root of the hosted version, e.g.
-``www/hdl/tags.json``.
-If not found, it will fallback to the default branch.
-Resolved the path, the mappings are obtained from the InterSphinx mapping file.
+It is possible to customize the target URL with the ``interref_uri`` config or
+``ADOC_INTERREF_URI`` environment variables.
+The default value is *https://analogdevicesinc.github.io/* and can be set to a
+local path like *../../*.
 
-To show all links of an InterSphinx mapping file, use the built-in tool:
+Beyond the main target dictated by *interref_uri*,
+by setting the config ``interref_local`` as true, a secondary target is inferred
+foreseeing a local copy of the target external documentation alongside the
+current repository:
 
-.. code:: bash
+.. code::
 
-   python3 -m sphinx.ext.intersphinx https://analogdevicesinc.github.io/hdl/objects.inv
+   /data/work
+   ├─my-repo-0/doc/sources
+   │
+   ├─my-repo-1/docs
+   │
+   └─my-repo-2/doc
 
-The previous syntax applies only for references/label links (domain ``ref``/``label``),
-for every other domain, set it explicitly,
-e.g. :code:`:ref-hdl:doc:\`user_guide/docs_guidelines\``.
-The domains are also listed in the ``sphinx.ext.intersphinx`` output.
+The correct relative paths are resolved looking into the ``lut.py``.
 
-Others options:
+.. _out-org-ref:
 
-* ``ADOC_INTERREF_URI``: uri for the inventory and links, default is
-  ``https://analogdevicesinc.github.io/``; it can be a local path, e.g.
-  ``/path/to/www``, in this case, the rendered href is always relative and
-  expects the builds to be stored in the same path, e.g ``/path/to/www``.
-
-
-
-Outside organization Sphinx references
+Outside organization Sphinx reference
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-To create references to other Sphinx documentations, ``sphinx.ext.intersphinx``
-can be added to the ``conf.py`` extension list.
-The syntax is :code:`:external+<external>:<domain>:\`label\``, where ``external``
-is a mapped source and the domain is the reference type,
-for example, :code:`:external+sphinx:doc:\`development/theming\``.
-It is also possible to customize the text, e.g.
-:code:`:external+sphinx:ref:\`Custom text <examples>\``.
-
-A warning is thrown when a reference is not found.
-
-Mappings are included to the `conf.py` file with the following format:
+To create references to third-party Sphinx documentations, add the mappings to
+to the `conf.py` file with the following format:
 
 .. code:: python
 
@@ -211,15 +384,6 @@ For example:
        'sphinx': ('https://www.sphinx-doc.org/en/master', None)
    }
 
-And new mappings can be included as needed.
-
-To show all links of an InterSphinx mapping file, use the built-in tool:
-
-.. code:: bash
-
-   python3 -m sphinx.ext.intersphinx https://www.sphinx-doc.org/en/master/objects.inv
-
-
 Text width
 --------------------------------------------------------------------------------
 
@@ -231,35 +395,34 @@ while respecting word-breaks:
 
    cat imported.txt | fold -sw 80 > imported.rst
 
-Or use :code:`pandoc`:
+The header divider "``---``" shall be either 80 characters wide or end at the
+title character, that means, this is also valid:
 
-.. code:: bash
+.. code::
 
-   pandoc imported.txt -f dokuwiki -t rst --columns=80 -s -o imported.rst
+   My title
+   ========
 
+.. _tables:
 
 Tables
 --------------------------------------------------------------------------------
 
 Prefer
-`list-tables <https://docutils.sourceforge.io/docs/ref/rst/directives.html#list-table>`_
+`list-tables <https://docutils.sourceforge.io/docs/ref/rst/directives.html#list-table>`__
 and imported
-`csv-tables <https://docutils.sourceforge.io/docs/ref/rst/directives.html#csv-table-1>`_
+`csv-tables <https://docutils.sourceforge.io/docs/ref/rst/directives.html#csv-table-1>`__
 (using the file option), because they are faster to create, easier to maintain
 and the 80 column-width rule can be respected with list-tables.
 
-You can use the following command:
+Only use
+`grid tables <https://www.sphinx-doc.org/en/master/usage/restructuredtext/basics.html#tables>`__
+if strictly necessary, since they are hard to update.
 
-.. code:: bash
+To tune styling, the following classes are available:
 
-   pandoc imported.txt -f dokuwiki -t rst --columns=80 -s -o imported.rst --list-tables
-
-The :code:`list-tables` parameter requires *pandoc-types* >= 1.23, included in any
-recent `pandoc release <https://github.com/jgm/pandoc/releases>`_;
-if it is not an option, you shall remove it and export in the *grid* table format.
-
-Now you only have to adjust the widths and give the final touches, like using
-the correct directives and roles.
+* *bold-header*: Make the header bold.
+* *bold-first-column*: Make the first column bold.
 
 Lists
 --------------------------------------------------------------------------------
@@ -365,31 +528,6 @@ files use a pattern at the repo root, for example:
 
 Or edit ``.gitattributes`` directly.
 
-.. _vivado block-diagrams:
-
-Vivado block-diagrams
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Vivado block-diagrams can be exported as PDF and then converted to SVG with
-Inkscape.
-
-Vivado waveform data
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-There is no way to export Vivado waveform data as vectors.
-Therefore, the recommended method is to take a PNG screenshot and use
-`GIMP <gimp.org>`_ to export as **8bpc RGB** with all metadata options
-disabled.
-
-.. note::
-
-   Always use the *Export As..* ``Ctrl+Shift+E`` option.
-
-To reduce even further the size, you can use *Color > Dither..* to reduce the
-number of colors in the PNG.
-Saving as greyscale also reduces the PNG size, but might reduce readability and
-it is not recommended.
-
 Third-party directives and roles
 --------------------------------------------------------------------------------
 
@@ -428,16 +566,20 @@ These links are not managed, that means, only links from changed files are check
 You can run a build with it set to False, then touch the desired files to check
 the links of only these files.
 
+.. _role git:
+
 Git role
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 The Git role allows to create links to the Git repository with a shorter syntax.
-The role syntax is :code:`:git-repo:\`text <branch:path>\``, for example:
+The role syntax is :code:`:git-repo:\`text <type+branch:path>\``, for example:
 
 * :code:`:git-hdl:\`main:docs/user_guide/docs_guidelines.rst\``
   renders as :git-hdl:`main:docs/user_guide/docs_guidelines.rst`.
 * :code:`:git-hdl:\`Guidelines <docs/user_guide/docs_guidelines.rst>\``
   renders as :git-hdl:`Guidelines <docs/user_guide/docs_guidelines.rst>`.
+* :code:`:git-wiki-scripts:\`raw+linux/build_zynq_kernel_image.sh`\``
+  renders as :git-wiki-scripts:`raw+linux/build_zynq_kernel_image.sh`.
 
 .. important::
 
@@ -450,11 +592,25 @@ because it is useful to auto-fill it for documentation releases
 A scenario where it is recommended to provide the branch is when linking others
 repositories.
 
+They type field is also optional and the values are:
+
+* *gui*: To view rendered on the Git server web GUI [default].
+* *raw*: To download/view as raw.
+* *{}*: Any other Git server web GUI link, e.g. :code:`:git-hdl:\`releases+\``.
+  The last character must be ``+``, since filenames/path may contain this character
+  also.
+
 The text field is optional and will be filled with the full path.
 
 Finally, you can do :code:`:git-repo:\`/\`` for a link to the root of the
 repository with pretty naming, for example, :code:`:git-hdl:\`/\`` is rendered
 as :git-hdl:`/`.
+
+DownGit role
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+Same as the :ref:`role git` but wrapping the address with the :git-DownGit:`+`
+fork.
 
 ADI role
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -467,6 +623,8 @@ Since links are case insensitive, you can also reduce it to
 :code:`:adi:\`AD7175-2\``, when *webpage* is the same as *text* and will render
 as :adi:`AD7175-2`.
 
+.. _role dokuwiki:
+
 Dokuwiki role
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -475,6 +633,13 @@ The role syntax is :code:`:dokuwiki:\`text <path>\``, for example,
 :code:`:dokuwiki:\`pulsar-adc-pmods <resources/eval/user-guides/circuits-from-the-lab/pulsar-adc-pmods>\``
 gets rendered as
 :dokuwiki:`pulsar-adc-pmods <resources/eval/user-guides/circuits-from-the-lab/pulsar-adc-pmods>`.
+
+For intentional deprecated links, add the ``deprecated`` qualifier, e.g.:
+:code:`:dokuwiki+deprecated:\`ADS-B Airplane Tracking Example <resources/tools-software/linux-software/libiio/clients/adsb_example>\``
+gets rendered as
+:dokuwiki+deprecated:`ADS-B Airplane Tracking Example <resources/tools-software/linux-software/libiio/clients/adsb_example>`.
+The sole intend of this qualifier is to distinct pending import pages from won't
+import pages.
 
 EngineerZone role
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -505,6 +670,272 @@ gets rendered
 
 Supported vendors are: ``xilinx`` (AMD Xilinx), ``intel`` (Intel Altera) and
 ``mw`` (MathWorks).
+
+Supplier role
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+The supplier role creates links to a vendor's website search.
+The role syntax is :code:`:vendor:\`text <path>\``, for example,
+:code:`:digikey:\`AD9081-FMCA-EBZ\``
+gets rendered
+:digikey:`AD9081-FMCA-EBZ`.
+
+The text parameter is optional.
+
+Supported vendors are: ``digikey`` (Digikey), ``mouser`` (Mouser) and
+``arrow`` (Arrow).
+
+Container directives
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+To allow disposing content in a tabular manner but still respecting the multiple
+screen sizes and both HTML and PDF output, two container directives are available,
+``flex`` and ``grid``.
+
+.. _directive flex:
+
+Flex directive
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+The grid directive implements a subset of
+`CSS Flex <https://css-tricks.com/snippets/css/a-guide-to-flexbox/>`__.
+And is used to dipose elements without worrying about number of columns and sizes,
+while still obtaining a fairly good result.
+
+.. code:: rst
+
+   .. flex::
+
+.. _directive grid:
+
+Grid directive
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+The grid directive implements a subset of
+`CSS Grids <https://css-tricks.com/snippets/css/complete-guide-grid/>`__.
+And is used to dipose elements with exact number of columns and width control.
+
+.. code:: rst
+
+   .. grid::
+      :widths: 25 25% 150px
+
+The ``widths`` options allow units (``px``, ``%``, etc) and without an explicit
+unit it is inferred percentile.
+This option is required, since it is not possible to infer the number of
+columns in a sane manner.
+
+
+Clear content directive
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A simple directive to
+`clear <https://developer.mozilla.org/en-US/docs/Web/CSS/clear>`__
+the content, forcing any following content to be moved below any preceding
+content.
+It is useful when working with images
+aligned/`float <https://developer.mozilla.org/en-US/docs/Web/CSS/float>`__
+left/right and wants to ensure the next section does not also gets "squashed".
+
+.. code:: rst
+
+   .. clear-content::
+      :side: [both,left,right]
+      :break:
+
+It can clear content to it's ``left``, ``right`` or ``both`` sides.
+By default, it clear ``both`` sides.
+
+With the ``break`` option, it will break the page when generating a PDF
+(behaves similar to LaTeX *cleardoublepage*).
+
+Shell directive
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The shell directive allows to embed shell code in a standard way.
+
+.. code:: rst
+
+   .. shell:: [bash,sh,zsh,ps1]
+      :user: <user>
+      :group: <group>
+      :caption: <caption>
+      :show-user:
+      :no-path:
+
+      /path_absolute
+      ~path_relative_to_home
+      $command
+       output
+
+That means, each line is prefixed by character to:
+
+* ``$``: bash commands.
+* :code:`\ ` (one space): command output.
+* ``#``: bash comments
+* ``/``: set absolute working directory (cygpath-formatted for ps1).
+* ``~``: set relative to "home" working directory (cygpath-formatted for ps1).
+
+Anything that does not match the previous characters will default to output print,
+but please be careful, since you may accidentally mark a working directory or
+command, if not identing the output by one space.
+
+The bash type defaults to ``bash``, user to ``user``, group to ``analog``
+and the working directory as "doesn't matter" (hidden), so, for
+example:
+
+.. code:: rst
+
+   .. shell::
+      :caption: iio_reg help
+
+      $iio_reg -h
+       Usage:
+
+       iio_reg <device> <register> [<value>]
+
+Renders as:
+
+.. shell::
+   :caption: iio_reg help
+   :show-user:
+
+   $iio_reg -h
+    Usage:
+
+    iio_reg <device> <register> [<value>]
+
+.. admonition:: Insight
+   :class: caution
+
+   To make it super easy for the user to copy only the command,
+   the current directory and output cannot be selected.
+
+To show the user and user group, add the ``:show-user:`` flag.
+
+For Windows, set bash type as ``ps1`` (PowerShell), for example:
+
+.. code:: rst
+
+   .. shell:: ps1
+      :user: Analog
+
+      /e/MyData
+      $cd ~/Documents
+      $ls
+       Mode  LastWriteTime      Name
+       ----  -------------      ----
+       d---- 6/14/2024 10:30 AM ImportantFiles
+       d---- 6/14/2024 10:30 AM LessImportantFiles
+      $cd ..\Other\Folder
+      $echo HelloWindows
+       HelloWindows
+
+Renders as:
+
+.. shell:: ps1
+   :user: Analog
+
+   /e/MyData
+   $cd ~/Documents
+   $ls
+    Mode  LastWriteTime      Name
+    ----  -------------      ----
+    d---- 6/14/2024 10:30 AM ImportantFiles
+    d---- 6/14/2024 10:30 AM LessImportantFiles
+   $cd ..\Other\Folder
+   $echo HelloWindows
+    HelloWindows
+
+To make things more interesting, basic ``$cd`` commands change the working
+directory accordingly, for example:
+
+.. code:: rst
+
+   .. shell::
+
+      $cd /sys/bus/iio/devices/
+      $ls
+       iio:device0  iio:device3  iio:device2  iio:device3  iio:device4  iio:device5  iio:device6
+      $cd iio:device3
+      $ls -al
+       total 0
+       drwxr-xr-x 3 root root     0 May 16 14:21 .
+       -rw-rw-rw- 1 root root  4096 May 16 14:22 calibrate
+       -rw-rw-rw- 1 root root  4096 May 16 14:22 calibrate_frm_en
+
+Renders as:
+
+.. shell::
+
+   $cd /sys/bus/iio/devices/
+   $ls
+    iio:device0  iio:device3  iio:device2  iio:device3  iio:device4  iio:device5  iio:device6
+   $cd iio:device3
+   $ls -al
+    total 0
+    drwxr-xr-x 3 root root     0 May 16 14:21 .
+    -rw-rw-rw- 1 root root  4096 May 16 14:22 calibrate
+    -rw-rw-rw- 1 root root  4096 May 16 14:22 calibrate_frm_en
+
+Finally, be mindful of the command legibility, break long commands and sugar coat
+with indent:
+
+
+.. code:: rst
+
+   .. shell::
+
+      # Write the file to the storage devices
+      $time sudo dd \
+      $  if=2021-07-28-ADI-Kuiper-full.img \
+      $  of=/dev/mmcblk0 \
+      $  bs=4194304
+       [sudo] password for user:
+       0+60640 records in 0+60640 records out 7948206080 bytes (7.9 GB) copied, 571.766 s, 13.9 MB/s
+       real 7m54.11s user 0.29s sys 8.94s
+
+Renders to:
+
+.. shell::
+
+   # Write the file to the storage device
+   $time sudo dd \
+   $  if=2021-07-28-ADI-Kuiper-full.img \
+   $  of=/dev/mmcblk0 \
+   $  bs=4194304
+    [sudo] password for user:
+    0+60640 records in 0+60640 records out 7948206080 bytes (7.9 GB) copied, 571.766 s, 13.9 MB/s
+    real 7m54.11s user 0.29s sys 8.94s
+
+.. _svg-directive:
+
+SVG directive
+~~~~~~~~~~~~~
+
+The SVG directive embeds a SVG image directly onto the page, having it share
+the same DOM sandbox as the page.
+
+This allows the SVG image to contain links and interactive content, such as
+hover effects.
+
+The syntax is:
+
+.. code:: rst
+
+   .. svg: <file>
+      :align: [left,center,right]
+
+      <caption>
+
+At it's core, for the HTML builder, it is somewhat equivalent to:
+
+.. code:: rst
+
+   .. raw: html
+      :file: path
+
+But have the proper hooks for future implementation for other outputs (LaTeX, etc.).
 
 .. _hdl build-status-directive:
 
@@ -736,6 +1167,12 @@ The directive syntax is:
 .. code:: rst
 
    .. video:: <url>
+      :align: [left,center,right]
+
+      <caption>
+
+Always add a caption to the video, since a PDF output won't contain the embed
+video, but a link to it.
 
 For example:
 
@@ -743,9 +1180,13 @@ For example:
 
    .. video:: http://ftp.fau.de/fosdem/2015/devroom-software_defined_radio/iiosdr.mp4
 
+      **Linux Industrial IO framework** - Lars-Peter Clausen, Analog Devices Inc
+
 Renders as:
 
 .. video:: http://ftp.fau.de/fosdem/2015/devroom-software_defined_radio/iiosdr.mp4
+
+   **Linux Industrial IO framework** - Lars-Peter Clausen, Analog Devices Inc
 
 And:
 
@@ -753,9 +1194,13 @@ And:
 
    .. video:: https://www.youtube.com/watch?v=p_VntEwUe24
 
+      **LibIIO - A Library for Interfacing with Linux IIO Devices** - Dan Nechita, Analog Devices Inc
+
 Renders as:
 
 .. video:: https://www.youtube.com/watch?v=p_VntEwUe24
+
+   **LibIIO - A Library for Interfacing with Linux IIO Devices** - Dan Nechita, Analog Devices Inc
 
 ESD warning directive
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -775,13 +1220,8 @@ Global options for directives
 
 Set ``hide_collapsible_content`` to ``True`` to hide the *collapsibles* by default.
 
-Set ``validate_links`` to ``True`` to validate each link during build.
-These links are not managed, that means, only links from changed files are checked.
-You can run a build with it set to False, then touch the desired files to check
-the links of only these files.
-
-Set ``monolithic`` to ``True`` prefix paths with *repos/<repo>*.
-This is meant for the System Top Documentation repository only.
+Set ``monolithic`` to ``True`` prefix paths with *<repo>*.
+This is meant for the :ref:`custom-doc` custom documents only.
 
 Common sections
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -813,8 +1253,8 @@ Dynamic elements refer to sections of the generated webpage that updates when
 loaded online from a source of truth, in general, ``doctools/*.json`` files;
 it uses a concept similar to "react components".
 
-These ``*.json`` files are generated when ``doctools_export_metadata`` is true
-in the ``conf.py``.
+These ``*.json`` files are generated when ``export_metadata`` is true in the
+``conf.py``.
 From the JavaScript side, it fetches from
 ``{content_root}[../versioned]/../doctools/[versioned]/metadata.json``.
 

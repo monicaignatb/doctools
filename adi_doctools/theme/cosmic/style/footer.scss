@@ -1,17 +1,29 @@
+@use "variable";
+
 footer {
-    background: var(--bg-color1);
-    border-top: $border-panel;
+    border-top: variable.$border-panel;
     padding: 1em;
 }
 
+@media screen {
+    footer {
+        background: var(--bg-color1);
+    }
+}
 
-@media (min-width: $width-narrow) {
+@media (min-width: variable.$screen-1) and (max-width: variable.$screen-2) {
+    footer {
+        margin-left: 18rem;
+    }
+}
+
+@media (min-width: variable.$screen-2) {
     footer {
         margin-left: calc(40vw - 14em);
     }
 }
 
-@media (min-width: $width-wide) {
+@media (min-width: variable.$screen-3) {
     footer {
         max-width: 60rem;
     }

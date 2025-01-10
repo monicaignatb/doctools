@@ -28,10 +28,9 @@ dependencies = [
     "docutils",
     "sphinx",
     "lxml",
-    "aiohttp",
-    "aiodns",
     "click",
     "pygments >= 2.7",
+    "PyYAML",
 ]
 requires-python = ">=3.8"
 dynamic = ["version"]
@@ -51,6 +50,7 @@ version = {attr = "adi_doctools.__version__"}
 
 [project.entry-points."sphinx.html_themes"]
 cosmic = 'adi_doctools'
+harmonic = 'adi_doctools'
 
 [project.scripts]
 adoc = "adi_doctools.cli:entry_point"

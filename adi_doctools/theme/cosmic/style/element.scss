@@ -1,3 +1,5 @@
+@use "variable";
+
 input, textarea, select, button, summary {
     background: none;
     outline: none;
@@ -9,49 +11,37 @@ a, input, textarea, select, button, summary, label {
     -webkit-tap-highlight-color: transparent;
 }
 
-a {
-    user-select: none;
-    text-decoration: none;
-    color: inherit;
-}
-
-.body {
-    p a, a.reference.internal:not(.image-reference), aside a {
-        color: var(--accent-color);
-        border-bottom: 1px solid rgba(125, 125, 125, .25);
-    }
-
-    p a:hover, a.reference.internal:hover, aside a:hover {
-        border-color: var(--text-color2);
-    }
-}
-
 video {
     max-width: 100%;
 }
 
-section, #top-anchor, aside, a {
-    scroll-margin-top: 3.5rem;
-}
+@media screen {
+    section, #top-anchor, aside, a, .literal-block-wrapper {
+        scroll-margin-top: 3.5rem;
+    }
 
-:is(h1, h2, h3, h4, h5, h6) .headerlink,
-figure .headerlink {
-    margin-left: .25em;
-    opacity: 0;
-    transition: opacity ease .125s;
-}
-
-:is(h1, h2, h3, h4, h5, h6):hover .headerlink,
-figure:hover .headerlink {
-    opacity: 1;
+    span {
+        scroll-margin-top: 2.5rem;
+    }
 }
 
 code.literal {
     border: 1px solid rgba(125, 125, 125, 0.15);
     background: rgba(125, 125, 125, 0.05);
-    border-radius: $border-radius;
-    padding: .1em .2em;
-    font-size: 1.1em;
+    border-radius: variable.$border-radius;
+    padding: 0em .2em 0.1em .2em;
+}
+
+@media screen {
+    code.literal, .highlight pre {
+        font-size: 1.1em;
+    }
+}
+
+@media print {
+    code.literal {
+        font-size: 0.9em;
+    }
 }
 
 a {
@@ -60,7 +50,8 @@ a {
 
 .highlight {
     padding: .75em;
-    border-radius: $border-radius;
+    margin-bottom: .5em;
+    border-radius: variable.$border-radius;
     overflow-x: auto;
 }
 
@@ -77,49 +68,20 @@ a {
     overflow-x: auto;
 }
 
-table.docutils {
-    border-spacing: 0;
-    border-radius: $border-radius;
-    border: $border-td;
-
-    thead {
-        background-color: var(--bg-color2);
-    }
-
-    th {
-        border-bottom: $border-th;
-    }
-
-    td {
-        border-bottom: $border-td;
-    }
-
-    p {
-        margin: 0;
-        text-align: left;
-    }
-
-    th, td {
-        padding: .5em;
-    }
-
-    tr:last-child td {
-        border: none;
-    }
-
-    thead:not(:first-child) th {
-        font-weight: normal;
-    }
-}
-
 img {
     display: block;
     margin: 0 auto;
     max-width: 100%;
 }
 
-@media (min-width: $width-narrow) {
-    .body img {
+@media print {
+    img {
+        break-inside: avoid;
+    }
+}
+
+@media (min-width: variable.$screen-1) {
+    .body img, .body figure, .body .svg {
         display: block;
         margin: 0 auto;
         max-width: 100%;
@@ -129,25 +91,73 @@ img {
             float: left;
             clear: left;
             margin-right: .5em;
+            max-width: 45%;
         }
 
         &.align-right {
             float: right;
             clear: right;
             margin-left: .5em;
+            max-width: 45%;
         }
     }
 }
 
-@media (prefers-color-scheme: dark) {
-    body:not(.light) .body img {
-        background: #fff;
-        border-radius: $border-radius;
+@media print {
+    .body img, .body figure, .body .svg {
+        display: block;
+        margin: 0 auto;
+        max-width: 100%;
+        padding: .5em;
+
+        &.align-left {
+            float: left;
+            clear: left;
+            margin-right: .5em;
+            max-width: 45%;
+        }
+
+        &.align-right {
+            float: right;
+            clear: right;
+            margin-left: .5em;
+            max-width: 45%;
+        }
     }
 }
-body.dark .body img {
+
+.clear-both {
+    clear: both;
+}
+
+.clear-left {
+    clear: both;
+}
+
+.clear-right {
+    clear: both;
+}
+
+@media print {
+    .break-after {
+        break-after: always;
+    }
+    .break-before {
+        break-before: always;
+    }
+}
+
+@media (prefers-color-scheme: dark) {
+    body:not(.light) .body img,
+    body:not(.light) .body svg {
+        background: #fff;
+        border-radius: variable.$border-radius;
+    }
+}
+body.dark .body img,
+body.dark .body svg {
     background: #fff;
-    border-radius: $border-radius;
+    border-radius: variable.$border-radius;
 }
 
 .toctree-wrapper li {
@@ -155,10 +165,16 @@ body.dark .body img {
 }
 
 table.regmap {
-    font-size: 0.8rem;
+    td.description {
+        font-size: 0.8em;
+    }
+}
 
-    .pre {
-        line-height: 1.8em;
+@media screen {
+    table.regmap {
+        td:not(.description) code.literal {
+            font-size: 1em;
+        }
     }
 }
 
@@ -188,10 +204,16 @@ iframe {
     border: none;
 }
 
+@media screen {
+    .iframe-video p, .embed-video p {
+        text-align: center;
+    }
+}
+
 .iframe-video {
     iframe {
-        box-shadow: $box-shadow-raised;
-        border-radius: $border-radius;
+        box-shadow: variable.$box-shadow-raised;
+        border-radius: variable.$border-radius;
         overflow: hidden;
         display: block;
         margin: 0 auto;
@@ -200,25 +222,53 @@ iframe {
     }
 }
 
-@media (max-width: $width-narrow) {
+@media (max-width: variable.$screen-2) {
     .iframe-video {
         width: 100%;
         overflow: hidden;
     }
+}
+
+@media (min-width: variable.$screen-1) and (max-width: variable.$screen-2) {
+    .iframe-video iframe {
+        width: calc(100vw - 20rem);
+        height: calc(56.25vw - 11.25rem);
+    }
+}
+
+@media (max-width: variable.$screen-1) {
     .iframe-video iframe {
         width: calc(100vw - 2rem);
         height: calc(56.25vw - 1.125rem);
     }
 }
 
+@media (min-width: variable.$screen-2) {
+    .iframe-video {
+        &.align-left {
+            float: left;
+            clear: left;
+            margin-right: 1em;
+        }
+
+        &.align-right {
+            float: right;
+            clear: right;
+            margin-left: 1em;
+        }
+
+        &.align-left iframe, &.align-right iframe {
+            width: 24rem;
+            height: 13.49rem;
+        }
+    }
+}
+
 .esd-warning {
-    display: flex;
     border-radius: .5em;
     align-items: center;
     padding: .25rem .5em !important;
-    background: yellow;
     font-size: .9em;
-    color: #000 !important;
     text-align: justify;
 
     .icon {
@@ -227,12 +277,50 @@ iframe {
         margin-right: .5rem;
         flex-shrink: 0;
         background: url(esd-warning.svg);
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
         background-size: contain;
+        margin: 0 auto;
     }
 }
 
-.image-reference {
+@media (min-width: variable.$screen-0) {
+    .esd-warning {
+        display: flex;
+    }
+}
+
+@media print {
+    .esd-warning {
+        display: flex;
+    }
+}
+
+@media screen {
+    .esd-warning {
+        color: #000 !important;
+        background: yellow;
+    }
+}
+
+@media print {
+    .esd-warning {
+        break-inside: avoid;
+        border: 1px solid yellow;
+    }
+}
+
+.image-reference, .svg p {
     text-align: center;
+}
+
+.image-reference:not(:has(.align-left, .align-right)) {
+    display: inline-block;
+    width: 100%;
+}
+
+img {
+    page-break-inside: avoid;
 }
 
 .only-dark, .only-light, #badges img {
@@ -253,4 +341,43 @@ iframe {
 
 figcaption p {
     text-align: center !important;
+}
+
+.red {
+    color: red;
+}
+
+.green {
+    color: green;
+}
+
+hr {
+    border-top: 1px dashed var(--text-color2);
+    border-bottom: None;
+}
+
+@media (min-width: variable.$screen-1) {
+    .body .flex {
+        display: flex;
+        flex-wrap: wrap;
+    }
+
+    .body .grid {
+        display: grid;
+        grid-template-rows: auto;
+    }
+}
+
+@media print {
+    .body .flex {
+        display: flex;
+        /* grid-template-columns set inline */
+        flex-wrap: wrap;
+    }
+
+    .body .grid {
+        display: grid;
+        /* grid-template-columns set inline */
+        grid-template-rows: auto;
+    }
 }

@@ -6,9 +6,10 @@ from os import path, walk
 from os import pardir, makedirs
 from math import ceil
 from lxml import etree
+from sphinx.util import logging
+from sphinx.util.osutil import SEP
 
 from .node import node_div
-from .common import logger
 from .common import directive_base
 from .common import parse_rst
 from .string import string_hdl
@@ -16,6 +17,9 @@ from ..parser.hdl import parse_hdl_component
 from ..parser.hdl import parse_hdl_regmap, resolve_hdl_regmap
 from ..parser.hdl import parse_hdl_build_status
 from ..writer.hdl_component import hdl_component
+
+logger = logging.getLogger(__name__)
+
 
 log = {
     'signal': "{lib}/component.xml: Signal {signal} defined in the hdl-interfaces directive does not exist in the IP-XACT!",  # noqa: E501
@@ -64,7 +68,8 @@ class directive_interfaces(directive_base):
                     caption += nodes.inline(text=txt)
                 caption += nodes.inline(text='.')
             if tag in description:
-                caption += parse_rst(self.state, description[tag])
+                caption += parse_rst(self.state, description[tag],
+                                     f"hdl-interfaces_{lib_name}")
 
             content, _ = self.collapsible(section, (component['name'], tag),
                                           caption)
@@ -82,7 +87,7 @@ class directive_interfaces(directive_base):
             pm = bs[tag]['port_map']
             for key in pm:
                 self.column_entries(rows, [
-                    [key, 'literal'],
+                    [key, 'literal' ],
                     [pm[key]['logical_port'], 'literal'],
                     [pm[key]['direction'], 'paragraph'],
                     [self.pretty_dep(pm[key]['dependency'], key), 'literal'],
@@ -114,8 +119,8 @@ class directive_interfaces(directive_base):
             row = nodes.row()
             self.column_entry(row, key, 'literal')
             self.column_entry(row, pr[key]['direction'], 'paragraph')
-            self.column_entry(row, self.pretty_dep(pr[key]['dependency'], key),
-                              'literal')
+            self.column_entry(row, self.pretty_dep(pr[key]['dependency'], key), 'literal')
+            
             if 'clk' in key or 'clock' in key:
                 domain = 'clock domain'
             elif 'reset':
@@ -187,8 +192,8 @@ class directive_regmap(directive_base):
         return (dword, byte)
 
     def tables(self, subnode, obj, key):
-        id_ = "hdl-regmap-" + key
-        section = nodes.section(ids=[id_])
+        uid = "hdl-regmap-" + key
+        section = nodes.section(ids=[uid])
 
         content, _ = self.collapsible(section, f"{obj['title']} register map")
         tgroup = nodes.tgroup(cols=7)
@@ -209,7 +214,7 @@ class directive_regmap(directive_base):
                 [byte, 'literal', ['bold']],
                 [reg['name'], 'literal', ['bold'], 3],
                 [reg['description'], 'reST', ['description', 'bold']],
-            ])
+            ], uid=uid)
 
             for field in reg['fields']:
                 bits = "" if field['bits'] is None else field['bits']
@@ -230,16 +235,19 @@ class directive_regmap(directive_base):
                     default = default.replace(a + "``", a + " ``")
 
                 if type(bits) is tuple:
-                    bits = f"{bits[0]}:{bits[1]}"
+                    if bits[0] == bits[1]:
+                        bits = bits[0]
+                    else:
+                        bits = f"{bits[0]}:{bits[1]}"
 
                 self.column_entries(rows, [
                     ["", 'literal', [''], 1],
                     [f"[{bits}]", 'literal'],
                     [field['name'], 'literal'],
                     [field['rw'], 'literal'],
-                    [default, 'default_value', ['default']],
+                    [default, 'literal', ['default']],
                     [field['description'], 'reST', ['description']],
-                ])
+                ], uid=uid)
 
         tbody = nodes.tbody()
         tbody.extend(rows)
@@ -266,7 +274,7 @@ class directive_regmap(directive_base):
                 [at, 'paragraph'],
                 [string_hdl.access_type[at]['name'], 'paragraph'],
                 [string_hdl.access_type[at]['description'], 'paragraph']
-            ])
+            ], uid=uid)
 
         tbody = nodes.tbody()
         tbody.extend(rows)
@@ -333,7 +341,7 @@ class directive_parameters(directive_base):
         table += tgroup
 
         self.table_header(tgroup, ["Name", "Description", "Default Value", "Choices/Range"])  # noqa: E501
-
+        
         rows = []
         for key in parameter:
             row = nodes.row()
@@ -374,7 +382,7 @@ class directive_parameters(directive_base):
     def run(self):
         env = self.state.document.settings.env
 
-        node = node_div()
+        node = node_div()        
 
         if 'path' not in self.options:
             self.options['path'] = env.docname.replace('/index', '')
@@ -512,8 +520,7 @@ def discover_hdl_component(env, lib):
             cp[lib]['owners'].append(env.docname)
         return
 
-    prefix = "../repos/hdl" if env.config.monolithic else ".."
-    f = f"{prefix}/{lib}/component.xml"
+    f = f"..{SEP}{lib}{SEP}component.xml"
     if not path.isfile(f):
         return
 
@@ -528,10 +535,9 @@ def manage_hdl_components(env, docnames, libraries):
     if not hasattr(env, 'component'):
         env.component = {}
 
-    prefix = "../repos" if env.config.monolithic else ".."
     cp = env.component
     for lib in list(cp):
-        f = f"{prefix}/{lib}/component.xml"
+        f = f"..{SEP}{lib}{SEP}component.xml"
         if not path.isfile(f):
             del cp[lib]
             continue
@@ -555,10 +561,10 @@ def manage_hdl_regmaps(env, docnames):
     if not hasattr(env, 'regmaps'):
         env.regmaps = {}
 
-    prefix = "../repos/hdl/docs" if env.config.monolithic else "."
+    prefix = f"..{SEP}hdl{SEP}docs" if env.config.monolithic else "."
     rm = env.regmaps
     for lib in list(rm):
-        f = f"{prefix}/regmap/adi_regmap_{lib}.txt"
+        f = f"{prefix}{SEP}regmap{SEP}adi_regmap_{lib}.txt"
         if not path.isfile(f):
             del rm[lib]
     # Inconsistent naming convention, need to parse all in directory.
@@ -585,17 +591,14 @@ def manage_hdl_regmaps(env, docnames):
             if reg_name in rm and rm[reg_name]['ctime'] >= ctime:
                 pass
             else:
-                rm[reg_name], msg = parse_hdl_regmap(ctime, file_)
-                for m in msg:
-                    logger.warning(m)
-    for m in resolve_hdl_regmap(rm):
-        logger.warning(m)
+                rm[reg_name] = parse_hdl_regmap(ctime, file_)
+    resolve_hdl_regmap(rm)
 
 
 def manage_hdl_artifacts(app, env, docnames):
-    prefix = "hdl/" if env.config.monolithic else ""
+    prefix = "hdl" if env.config.monolithic else "."
     libraries = [[k.replace('/index', ''), [k]]
-                 for k in env.found_docs if k.find(f"{prefix}library/") == 0]
+                 for k in env.found_docs if k.find(f"{prefix}{SEP}library{SEP}") == 0]
 
     manage_hdl_components(env, docnames, libraries)
     manage_hdl_regmaps(env, docnames)

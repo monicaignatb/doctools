@@ -1,8 +1,12 @@
 from os import path, listdir, remove, mkdir
 from os import pardir, killpg, getpgid
+from os import environ
+from os import chdir, getcwd
 from shutil import copy
 import click
 import importlib
+
+from sphinx.application import Sphinx
 
 log = {
     'no_mk': "File Makefile not found, is {} a docs folder?",
@@ -10,18 +14,21 @@ log = {
     'inv_f': "Could not find {}, check rollup output.",
     'inv_bdir': "Could not find BUILDDIR {}.",
     'inv_srcdir': "Could not find SOURCEDIR {}.",
-    'no_selenium': "Package 'selenium' is not installed, pooling enabled.",
+    'no_selenium': "Package 'selenium' is not installed.",
     'rollup': "Couldn't find {}, ensure this a symbolic install.",
     'node': "Couldn't find {}, please install the npm tools locally.",
     'comp': "Couldn't find the minified web files ",
     'no_npm': "and the npm tools are not installed.",
     'with_npm': "run with the --just-regen flag (npm detected).",
-    'fetch': "Do you want to fetch from the release?"
+    'fetch': "Do you want to fetch from the release?",
+    'builder': "Unknown builder '{}', valid options are: html, pdf.",
+    'no_weasyprint': "Package 'weasyprint' required for PDF generation is not installed.",
 }
 
 # Hall of shame of poorly managed artifacts
 unmanaged = []
-
+# Avoid
+first_run = True
 
 @click.command()
 @click.option(
@@ -29,7 +36,7 @@ unmanaged = []
     '-d',
     is_flag=False,
     type=click.Path(exists=True),
-    default=None,
+    default='.',
     help="Path to the docs folder with the Makefile."
 )
 @click.option(
@@ -48,24 +55,31 @@ unmanaged = []
     help="Watch web source code (requires symbolic install)."
 )
 @click.option(
-    '--no-selenium',
+    '--selenium',
     is_flag=True,
     default=False,
-    help="Force alternative pooling method instead of selenium/Firefox."
+    help="Use selenium/Firefox instead of pooling method (html builder only)."
 )
 @click.option(
-    '--just-regen',
-    '-g',
+    '--once',
+    '-o',
     is_flag=True,
     default=False,
-    help="Just regenerate the web minified files and exit."
+    help="Generate the build and exit."
 )
-def author_mode(directory, port, dev, no_selenium, just_regen):
+@click.option(
+    '--builder',
+    '-b',
+    is_flag=False,
+    default="html",
+    help="Builder to use, valid options are: html, pdf (WeasyPrint) (default: html)."
+)
+def serve(directory, port, dev, selenium, once, builder):
     """
     Watch the docs and source code to rebuild it on edit.
-    Two live update strategies are available:
-    Selenium: Page reloads through Firefox's API.
+    Two html live update strategies are available:
     Pooling: The webpage pools timestamp changes on the .dev-pool file.
+    Selenium: Page reloads through Firefox's API.
     """
 
     import glob
@@ -95,9 +109,35 @@ def author_mode(directory, port, dev, no_selenium, just_regen):
         else:
             return False
 
+    if builder not in ['html', 'pdf']:
+        click.echo(log['builder'].format(builder))
+        return
+    if builder == 'pdf':
+        environ["ADOC_MEDIA_PRINT"] = ""
+        if not importlib.util.find_spec("weasyprint"):
+            click.echo(log['no_weasyprint'])
+            return
+        from weasyprint import HTML, CSS
+        from weasyprint.text.fonts import FontConfiguration
+        builder = 'singlehtml'
+
     source_files = {'app.umd.js', 'app.umd.js.map', 'style.min.css',
                     'style.min.css.map'}
+    cwd_ = getcwd()
 
+    def signal_handler(sig, frame):
+        if builder == 'html':
+            click.echo("Shutting down server")
+            with lock:
+                http.shutdown()
+                http.server_close()
+            http_thread._stop()
+        if dev:
+            killpg(getpgid(rollup_p.pid), signal.SIGTERM)
+        click.echo("Terminated")
+        sys.exit()
+
+    cosmic_static = path.join('adi_doctools', 'theme', 'cosmic', 'static')
     def fetch_compiled(path_):
         req = path.join(path_, 'docs', 'requirements.txt')
         dist = path.join(path_, '.dist')
@@ -119,10 +159,9 @@ def author_mode(directory, port, dev, no_selenium, just_regen):
         remove(path.join(dist, file))
         for d in listdir(dist):
             break
-        base = path.join('adi_doctools', 'theme', 'cosmic', 'static')
         for f in source_files:
-            src = path.join(dist, d, base, f)
-            dest = path.join(path_, base, f)
+            src = path.join(dist, d, cosmic_static, f)
+            dest = path.join(path_, cosmic_static, f)
             copy(src, dest)
         rmtree(dist)
         click.echo("Success fetching the pre-compiled files!")
@@ -131,7 +170,7 @@ def author_mode(directory, port, dev, no_selenium, just_regen):
     par_dir = path.abspath(path.join(src_dir, pardir))
     rollup_bin = path.join(par_dir, 'node_modules', '.bin', 'rollup')
     rollup_conf = path.join(par_dir, 'ci', 'rollup.config.app.mjs')
-    if just_regen or dev:
+    if dev:
         if symbolic_assert(rollup_conf, log['rollup'].format(rollup_conf)):
             return
         if symbolic_assert(rollup_bin, log['node'].format(rollup_bin)):
@@ -151,21 +190,17 @@ def author_mode(directory, port, dev, no_selenium, just_regen):
             else:
                 return
 
-    if just_regen:
-        subprocess.call(f"{rollup_bin} -c {rollup_conf}",
-                        shell=True, cwd=par_dir)
-        return
-
     if directory is None:
         click.echo("Please provide a --directory.")
         return
 
     with_selenium = False
-    if not no_selenium:
+    if selenium and builder == 'html':
         if importlib.util.find_spec("selenium"):
             with_selenium = True
         else:
             click.echo(log['no_selenium'])
+            return
 
     directory = path.abspath(directory)
     makefile = path.join(directory, 'Makefile')
@@ -183,12 +218,57 @@ def author_mode(directory, port, dev, no_selenium, just_regen):
     if builddir_ is None or sourcedir_ is None:
         click.echo(log['inv_mk'].format(directory))
         return
-    builddir = path.join(directory, builddir_, 'html')
+    builddir = path.join(directory, builddir_, builder)
+    doctreedir = path.join(builddir_, "doctrees")
     sourcedir = path.join(directory, sourcedir_)
     if dir_assert(sourcedir, log['inv_srcdir']):
         return
 
-    devpool_js = "ADOC_DEVPOOL= " if not with_selenium else ""
+    # Define PDF generation
+    def generate_toctree(bookmarks, indent=0):
+        """
+        Generate table of contents
+        from: https://github.com/Kozea/WeasyPrint/issues/23#issuecomment-312447974
+        """
+        outline_str = ""
+        for i, (label, (page, _, _), children, _) in enumerate(bookmarks, 1):
+            outline_str += ('<p>%s %s <span class="page">%d</span></p>' % (
+                ' ' * indent, label.lstrip('0123456789. ').rstrip('¶# '), page))
+            outline_str += generate_toctree(children, indent + 2)
+        return outline_str
+
+
+    if builder == 'singlehtml':
+        singlehtml_file = path.join(builddir, 'index.html')
+        font_config = FontConfiguration()
+        from .aux_print import sanitize_singlehtml
+
+    def update_pdf():
+        html_ = sanitize_singlehtml(singlehtml_file)
+
+        click.echo("preparing pdf styles...")
+
+        font_config = FontConfiguration()
+        src_dir = path.abspath(path.join(path.dirname(__file__), pardir, pardir))
+        cosmic = path.join('adi_doctools', 'theme', 'cosmic')
+        css = CSS(path.join(src_dir, cosmic, 'static', 'style.min.css'),
+                  font_config=font_config)
+        css_extra = CSS(path.join(src_dir, cosmic, 'style', 'weasyprint.css'),
+                        font_config=font_config)
+
+        click.echo("rendering pdf content...")
+        html = HTML(string=html_, base_url=path.dirname(singlehtml_file))
+
+        document = html.render(stylesheets=[css, css_extra])
+
+        click.echo("writing pdf...")
+        document.write_pdf(path.join(builddir, '..', 'output.pdf'))
+
+    if not with_selenium and builder == 'html':
+        environ["ADOC_DEVPOOL"] = ""
+
+    app = Sphinx(directory, directory,  builddir, doctreedir, builder)
+
     watch_file_src = {}
     watch_file_rst = {}
     if dev:
@@ -210,16 +290,24 @@ def author_mode(directory, port, dev, no_selenium, just_regen):
                 return
 
         # Build doc the first time
-        subprocess.call(f"{devpool_js} make html", shell=True, cwd=directory)
+        app.build()
         for f, s in zip(w_files, source_files):
             watch_file_src[f] = path.getctime(f)
-        # Run rollup in watch mode
-        cmd = f"{rollup_bin} -c {rollup_conf} --watch"
-        rollup_p = subprocess.Popen(cmd, shell=True, cwd=par_dir,
-                                    stdout=subprocess.DEVNULL)
+        if not once:
+            # Run rollup in watch mode
+            cmd = f"{rollup_bin} -c {rollup_conf} --watch"
+            rollup_p = subprocess.Popen(cmd, shell=True, cwd=par_dir,
+                                        stdout=subprocess.DEVNULL)
+        elif builder == "singlehtml":
+            update_pdf()
     else:
         # Build doc the first time
-        subprocess.call(f"{devpool_js} make html", shell=True, cwd=directory)
+        app.build()
+        if builder == "singlehtml":
+            update_pdf()
+
+    if once:
+        return
 
     class Handler(http.server.SimpleHTTPRequestHandler):
         def __init__(self, *args, **kwargs):
@@ -229,18 +317,19 @@ def author_mode(directory, port, dev, no_selenium, just_regen):
         def log_message(self, format, *args):
             return
 
-    try:
-        http = socketserver.TCPServer(("", port), Handler)
-        lock = threading.Lock()
-        http_thread = threading.Thread(target=http.serve_forever)
-        http_thread.daemon = True
-        http_thread.start()
-    except Exception:
-        click.echo(f"Could not start server on http://0.0.0.0:{port}")
-        if dev:
-            killpg(getpgid(rollup_p.pid), signal.SIGTERM)
-
-        return
+    if builder == "html":
+        try:
+            http = socketserver.TCPServer(("", port), Handler)
+            lock = threading.Lock()
+            http_thread = threading.Thread(target=http.serve_forever)
+            http_thread.daemon = True
+            http_thread.start()
+        except Exception:
+            click.echo(f"Could not start server on http://0.0.0.0:{port}")
+            if dev:
+                killpg(getpgid(rollup_p.pid), signal.SIGTERM)
+            return
+    signal.signal(signal.SIGINT, signal_handler)
 
     dev_pool = path.join(builddir, '.dev-pool')
 
@@ -259,7 +348,7 @@ def author_mode(directory, port, dev, no_selenium, just_regen):
         driver = webdriver.Firefox()
 
         driver.get(f"http://0.0.0.0:{port}")
-    else:
+    elif builder == "html":
         update_dev_pool()
 
     def get_doc_sources():
@@ -282,12 +371,17 @@ def author_mode(directory, port, dev, no_selenium, just_regen):
                 glob_ = path.join(sourcedir, d, '**', typ)
                 _files = glob.glob(glob_, recursive=True)
                 __files = [path.abspath(f) for f in _files]
-                files.extend(__files)
                 for f in __files:
-                    ctime.append(path.getctime(f))
+                    if not path.isfile(f):
+                        continue
+                    ctime_ = path.getctime(f)
+                    ctime.append(ctime_)
+                    files.append(f)
         return (files, ctime)
 
+
     def check_files(scheduler):
+        global first_run
         update_sphinx = False
         update_page = False
         for file, ctime in zip(*get_doc_sources()):
@@ -307,9 +401,28 @@ def author_mode(directory, port, dev, no_selenium, just_regen):
                 update_page = True
                 watch_file_src[file] = ctime
 
+        if not path.isdir(builddir):
+            # User did make clean
+            update_sphinx = True
+
+        if first_run is True:
+            first_run = False
+            update_page = False
+            update_sphinx = False
+
         if update_sphinx:
-            subprocess.call(f"{devpool_js} make html",
-                            shell=True, cwd=directory)
+            if dev:
+                # Uses subprocess because creating a new Sphinx class:
+                # * Do not re-eval the roles/directives, but
+                # * Trigger a full rebuild due to env changes
+                # so it is no use for developing purposes.
+                #
+                # Maybe importlib.reload() + monkey patch could be an alternative,
+                # but not triggering full env reload would be tricky, so this is good
+                # enough.
+                subprocess.call(f"make {builder}", shell=True, cwd=directory)
+            else:
+                app.build()
         if update_page:
             for f, s in zip(w_files, source_files):
                 copy(f, path.join(builddir, '_static', s))
@@ -323,13 +436,28 @@ def author_mode(directory, port, dev, no_selenium, just_regen):
                         killpg(getpgid(rollup_p.pid), signal.SIGTERM)
                     with lock:
                         http.shutdown()
+                        http.server_close()
                     http_thread._stop()
                     return
-            else:
+            elif builder == "html":
                 update_dev_pool()
+            elif builder == 'singlehtml':
+                update_pdf()
 
         scheduler.enter(1, 1, check_files, (scheduler,))
 
     scheduler = sched.scheduler(time.time, time.sleep)
     scheduler.enter(1, 1, check_files, (scheduler,))
     scheduler.run()
+
+@click.command()
+@click.option(
+    '--directory',
+    '-d',
+    is_flag=False,
+    type=click.Path(exists=True),
+    default='.'
+)
+def author_mode(directory):
+    # DEPRECATED
+    click.echo("Deprecated: To match other live-editing tools, this command was renamed to 'serve'.")

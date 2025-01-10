@@ -4,7 +4,7 @@ from datetime import datetime
 from os import path
 
 from ..__init__ import __version__
-from ..typings.hdl import vendors, Library
+from ..typing.hdl import vendors, Library, Project
 
 svpkg_fn_new0 = """
       function new(
@@ -18,53 +18,15 @@ svpkg_fn_new1 = """\
       endfunction: new
 """
 
+license_makefile = f"""\
+####################################################################################
+## Copyright (c) 2018 - {datetime.now().year} Analog Devices, Inc.
+### SPDX short identifier: BSD-1-Clause
+## Auto-generated v{__version__}, do not modify!
+####################################################################################
+"""
 
-def svpkg_regmap(f, regmap: Dict, key: str):
-    f.write(f"    /* {regmap['title']} */\n")
-
-    for reg in regmap['regmap']:
-        row = f"    class {reg['name']}"
-        reg_param_dec = []
-        for reg_param in reg['parameters']:
-            reg_param_dec.append("int " + reg_param)
-            reg_param_dec.sort()
-        if len(reg_param_dec):
-            row += " #("
-            row += ", ".join(reg_param_dec)
-            row += ")"
-        row += " extends register_base;""\n"
-        f.write(row)
-
-        for field in reg['fields']:
-            if field['name'] != 'RESERVED':
-                row = f"      field_base {field['name']}_F;""\n"
-                f.write(row)
-
-        f.write(svpkg_fn_new0)
-        for field in reg['fields']:
-            if field['name'] != 'RESERVED':
-                row = f"        this.{field['name']}_F = "'new("'f"{field['name']}"
-                bits = f"{field['bits'][0]}, {field['bits'][1]}"
-
-                if field['default_long'] is None:
-                    default = "'hXXXXXXXX"
-                else:
-                    default = field['default_long']
-                    if type(default) is int:
-                        default = hex(field['default_long']).replace("0x", "'h")
-
-                row += '"'f", {bits}, {field['rw']}, {default}, this);""\n"
-                f.write(row)
-
-        f.write(svpkg_fn_new1)
-        f.write("    endclass\n\n")
-
-
-def svpkg_head(f, key: str, regmap: Dict):
-    run_time = datetime.now().strftime('%b %d %H:%M:%S %Y')
-    pkgname = f"adi_regmap_{key}_pkg"
-    classname = f"adi_regmap_{key}"
-    f.write("""\
+license_sv = f"""\
 // ***************************************************************************
 // ***************************************************************************
 // Copyright 2014 - 2024 (c) Analog Devices, Inc. All rights reserved.
@@ -99,7 +61,57 @@ def svpkg_head(f, key: str, regmap: Dict):
 //
 // ***************************************************************************
 // ***************************************************************************
-""")
+"""
+
+def svpkg_regmap(f, regmap: Dict, key: str):
+    f.write(f"    /* {regmap['title']} */\n")
+
+    for reg in regmap['regmap']:
+        # Skip unresolved
+        if reg['import']:
+            continue
+        row = f"    class {reg['name']}_CLASS"
+        reg_param_dec = []
+        for reg_param in reg['parameters']:
+            reg_param_dec.append("int " + reg_param)
+            reg_param_dec.sort()
+        if len(reg_param_dec):
+            row += " #("
+            row += ", ".join(reg_param_dec)
+            row += ")"
+        row += " extends register_base;""\n"
+        f.write(row)
+
+        for field in reg['fields']:
+            if field['name'] != 'RESERVED' and not field['import']:
+                row = f"      field_base {field['name']}_F;""\n"
+                f.write(row)
+
+        f.write(svpkg_fn_new0)
+        for field in reg['fields']:
+            if field['name'] != 'RESERVED' and not field['import']:
+                row = f"        this.{field['name']}_F = "'new("'f"{field['name']}"
+                bits = f"{field['bits'][0]}, {field['bits'][1]}"
+
+                if field['default_long'] is None:
+                    default = "'hXXXXXXXX"
+                else:
+                    default = field['default_long']
+                    if type(default) is int:
+                        default = hex(field['default_long']).replace("0x", "'h")
+
+                row += '"'f", {bits}, {field['rw']}, {default}, this);""\n"
+                f.write(row)
+
+        f.write(svpkg_fn_new1)
+        f.write("    endclass\n\n")
+
+
+def svpkg_head(f, key: str, regmap: Dict):
+    run_time = datetime.now().strftime('%b %d %H:%M:%S %Y')
+    pkgname = f"adi_regmap_{key}_pkg"
+    classname = f"adi_regmap_{key}"
+    f.write(license_sv)
     f.write("/* Auto generated Register Map */\n")
     f.write(f"/* {run_time} v{__version__} */\n")
     f.write("\n")
@@ -129,7 +141,7 @@ def svpkg_reg_decl(f, regmap: Dict):
             for n in range(*reg['where']):
                 reg_ = reg.copy()
                 reg_['name'] = reg_['name'].replace('n', str(n))
-                row = f"    {reg['name']}"
+                row = f"    {reg['name']}_CLASS"
                 if len(reg['parameters']):
                     row += " #("
                     row += ", ".join(reg['parameters'])
@@ -137,7 +149,7 @@ def svpkg_reg_decl(f, regmap: Dict):
                 row += f" {reg_['name']}_R;\n"
                 f.write(row)
         else:
-            row = f"    {reg['name']}"
+            row = f"    {reg['name']}_CLASS"
             if len(reg['parameters']):
                 row += " #("
                 row += ", ".join(reg['parameters'])
@@ -199,20 +211,14 @@ def write_hdl_regmap(
 
 
 def write_hdl_library_makefile(
-    path_: str,
-    root_path: str,
-    library: Library
-) -> Tuple[str]:
+    libraries: Dict[str, Library],
+    path_: str
+) -> None:
+    library = libraries[path_]
     fname = "Makefile"
-    file = path.join(path_, fname)
+    file = path.join('library', path_, fname)
     f = open(file, "w")
-    f.write(f"""\
-####################################################################################
-## Copyright (c) 2018 - {datetime.now().year} Analog Devices, Inc.
-### SPDX short identifier: BSD-1-Clause
-## Auto-generated v{__version__}, do not modify!
-####################################################################################
-""")
+    f.write(license_makefile)
     f.write("\n")
     f.write(f"LIBRARY_NAME := {library['name']}\n")
     f.write("\n")
@@ -241,7 +247,31 @@ def write_hdl_library_makefile(
         if len(r['interfaces_tcl']) > 0:
             f.write("\n")
 
-    p_ = path.join(root_path, 'library', 'scripts', 'library.mk')
+    p_ = path.join('scripts', 'library.mk')
+    p_ = path.relpath(p_, path_)
+    f.write(f"include {p_}\n")
+    f.close()
+
+
+def write_hdl_project_makefile(
+    project: Dict[str, Project],
+    path_: str
+) -> None:
+    project = project[path_]
+    fname = "Makefile"
+    file = path.join('projects', path_, fname)
+    f = open(file, "w")
+    f.write(license_makefile)
+    f.write("\n")
+    f.write(f"PROJECT_NAME := {project['name']}\n")
+    f.write("\n")
+    for d in project['m_deps']:
+        f.write(f"M_DEPS += {d}\n")
+    f.write("\n")
+    for d in project['lib_deps']:
+        f.write(f"LIB_DEPS += {d}\n")
+    f.write("\n")
+    p_ = f"scripts/project-{project['vendor']}.mk"
     p_ = path.relpath(p_, path_)
     f.write(f"include {p_}\n")
     f.close()

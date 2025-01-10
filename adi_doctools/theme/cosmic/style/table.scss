@@ -1,0 +1,58 @@
+@use "variable";
+
+@media screen {
+    table.docutils {
+        box-shadow: var(--subtle-box-shadow);
+    }
+}
+
+table.docutils {
+    margin-top: .25em;
+    margin-bottom: .5em;
+    border-spacing: 0;
+    overflow: hidden;
+    border-radius: variable.$border-radius;
+    border: variable.$border-td;
+    border-bottom: none;
+
+    th {
+        border-bottom: variable.$border-th;
+    }
+
+    td {
+        border-bottom: variable.$border-td;
+    }
+
+    p {
+        margin: 0;
+        text-align: left;
+    }
+
+    th, td {
+        padding: .5em;
+    }
+
+    tr:last-child {
+        border-bottom: none;
+    }
+
+    &.grid {
+        border-left: none;
+        td, th {
+            border-left: variable.$border-td;
+        }
+    }
+
+    &.bold-header thead,
+    &.bold-first-column tbody tr td:first-child {
+        font-weight: bold;
+    }
+}
+
+@media screen {
+    table.docutils {
+        thead {
+            background-color: var(--bg-color2);
+        }
+    }
+}

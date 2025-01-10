@@ -1,7 +1,7 @@
-@import "variable";
-@import "mixin_icons";
-@import "mixin_admonition";
-@import "mixin_links";
+@use "variable";
+@use "mixin_icons";
+@use "mixin_admonition";
+@use "mixin_links";
 
 :root {
     --subtle-box-shadow: 0 .2rem .5rem rgba(0,0,0,.05),0 0 .0625rem rgba(0,0,0,.1);
@@ -15,12 +15,12 @@ html {
 }
 
 body {
-    @include icons;
-    @include admonitions;
-    @include default-admonition(#651fff, "abstract");
-    @include default-topic(#14B8A6, "pencil");
-    @include links;
-    @include default-link(#14B8A6, "adi");
+    @include mixin_icons.icons;
+    @include mixin_admonition.admonitions;
+    @include mixin_admonition.default-admonition(#651fff, "abstract");
+    @include mixin_admonition.default-topic(#14B8A6, "pencil");
+    @include mixin_links.links;
+    @include mixin_links.default-link(#14B8A6, "adi");
 }
 
 body {
@@ -28,17 +28,18 @@ body {
     --is-light-theme: 1;
     --display-dark: none;
     --display-light: inline-block;
-    --bg-color1: #{$bg-light1};
-    --bg-color2: #{$bg-light2};
-    --bg-color1-faded1: #{$bg-light1}99;
-    --bg-color1-faded2: #{$bg-light1}aa;
-    --text-color1: #{$text-color-light1};
-    --text-color2: #{$text-color-light2};
-    --text-color3: #{$text-color-light3};
-    --accent-color: #{$accent-color-light};
-    --accent-color-code: #{$accent-color-code-light};
-    --bg-banner: #{$bg-banner-light};
-    --text-color-banner: #{$text-color-banner-light};
+    --bg-color1: #{variable.$bg-light1};
+    --bg-color2: #{variable.$bg-light2};
+    --bg-color3: #{variable.$bg-light3};
+    --bg-color1-faded1: #{variable.$bg-light1}99;
+    --bg-color1-faded2: #{variable.$bg-light1}aa;
+    --text-color1: #{variable.$text-color-light1};
+    --text-color2: #{variable.$text-color-light2};
+    --text-color3: #{variable.$text-color-light3};
+    --accent-color: #{variable.$accent-color-light};
+    --accent-color-code: #{variable.$accent-color-code-light};
+    --bg-banner: #{variable.$bg-banner-light};
+    --text-color-banner: #{variable.$text-color-banner-light};
 }
 
 body.dark {
@@ -46,17 +47,18 @@ body.dark {
     --is-light-theme: 0;
     --display-dark: inline-block;
     --display-light: none;
-    --bg-color1: #{$bg-dark1};
-    --bg-color2: #{$bg-dark2};
-    --bg-color1-faded1: #{$bg-dark1}aa;
-    --bg-color1-faded2: #{$bg-dark1}cc;
-    --text-color1: #{$text-color-dark1};
-    --text-color2: #{$text-color-dark2};
-    --text-color3: #{$text-color-dark3};
-    --accent-color: #{$accent-color-dark};
-    --accent-color-code: #{$accent-color-code-dark};
-    --bg-banner: #{$bg-banner-dark};
-    --text-color-banner: #{$text-color-banner-dark};
+    --bg-color1: #{variable.$bg-dark1};
+    --bg-color2: #{variable.$bg-dark2};
+    --bg-color3: #{variable.$bg-dark3};
+    --bg-color1-faded1: #{variable.$bg-dark1}aa;
+    --bg-color1-faded2: #{variable.$bg-dark1}cc;
+    --text-color1: #{variable.$text-color-dark1};
+    --text-color2: #{variable.$text-color-dark2};
+    --text-color3: #{variable.$text-color-dark3};
+    --accent-color: #{variable.$accent-color-dark};
+    --accent-color-code: #{variable.$accent-color-code-dark};
+    --bg-banner: #{variable.$bg-banner-dark};
+    --text-color-banner: #{variable.$text-color-banner-dark};
 }
 
 @media (prefers-color-scheme: dark) {
@@ -65,25 +67,31 @@ body.dark {
         --is-light-theme: 0;
         --display-dark: inline-block;
         --display-light: none;
-        --bg-color1: #{$bg-dark1};
-        --bg-color2: #{$bg-dark2};
-        --bg-color1-faded1: #{$bg-dark1}99;
-        --bg-color1-faded2: #{$bg-dark1}aa;
-        --text-color1: #{$text-color-dark1};
-        --text-color2: #{$text-color-dark2};
-        --text-color3: #{$text-color-dark3};
-        --accent-color: #{$accent-color-dark};
-        --accent-color-code: #{$accent-color-code-dark};
-        --bg-banner: #{$bg-banner-dark};
-        --text-color-banner: #{$text-color-banner-dark};
+        --bg-color1: #{variable.$bg-dark1};
+        --bg-color2: #{variable.$bg-dark2};
+        --bg-color3: #{variable.$bg-dark3};
+        --bg-color1-faded1: #{variable.$bg-dark1}99;
+        --bg-color1-faded2: #{variable.$bg-dark1}aa;
+        --text-color1: #{variable.$text-color-dark1};
+        --text-color2: #{variable.$text-color-dark2};
+        --text-color3: #{variable.$text-color-dark3};
+        --accent-color: #{variable.$accent-color-dark};
+        --accent-color-code: #{variable.$accent-color-code-dark};
+        --bg-banner: #{variable.$bg-banner-dark};
+        --text-color-banner: #{variable.$text-color-banner-dark};
     }
 }
 
 body {
     margin: 0;
-    background-color: var(--bg-color1);
-    color: var(--text-color1);
     overflow-x: hidden;
+}
+
+@media screen {
+    body {
+        background-color: var(--bg-color1);
+        color: var(--text-color1);
+    }
 }
 
 * {
@@ -96,53 +104,85 @@ body {
     overflow-x: auto;
 }
 
-@media (min-width: $width-wide) {
+@media (min-width: variable.$screen-3) {
   .bodywrapper > div {
       max-width: 60rem;
   }
 }
 
-@media (max-width: $width-wide) {
+@media (max-width: variable.$screen-3) {
     .bodywrapper > div {
         margin: 0 auto;
     }
 }
 
-@media (min-width: $width-narrow) {
+@media (min-width: variable.$screen-1) {
     #vertical-border {
         position: fixed;
         height: 100vh;
-        border-left: $border-panel;
+        border-left: variable.$border-panel;
         top: 0;
-        left: calc(40vw - 15em);
         z-index: 10;
-    }
-
-    .bodywrapper {
-        margin-left: calc(40vw - 14em);
     }
 }
 
-@media (min-width: $width-narrow) {
+@media (min-width: variable.$screen-1) and (max-width: variable.$screen-2) {
+    #vertical-border {
+        left: 17rem;
+    }
+
+    .bodywrapper {
+        margin-left: 18rem;
+    }
+}
+
+@media (min-width: variable.$screen-2) {
+    #vertical-border {
+        left: calc(40vw - 15rem);
+    }
+
+    .bodywrapper {
+        margin-left: calc(40vw - 14rem);
+    }
+}
+
+@media (min-width: variable.$screen-1) {
     button#show-sidebar {
       display: none;
     }
 
     .body {
-        min-height: calc(100vh - 7em);
+        min-height: calc(100vh - 7rem);
     }
 }
 
-@media (max-width: $width-narrow) {
+@media (max-width: variable.$screen-1) {
     .body {
         min-height: calc(100vh - 11.25rem);
     }
 }
 
-.body p {
-    line-height: 1.5em;
-    text-align: justify;
-    margin: .25em 0 .75em 0;
+.body {
+    p, div.line {
+        line-height: 1.5em;
+        margin: .25em 0 .75em 0;
+    }
+
+    p {
+        margin: .25em 0 .5em 0;
+    }
+
+    div.line{
+        margin: .25em 0;
+    }
+}
+
+@media screen {
+    .body {
+        p, div.line {
+            text-align: justify;
+        }
+    }
 }
 
 .body ol p, .body ul p {
@@ -152,22 +192,26 @@ body {
 svg {
     display: block;
     margin: 0 auto;
+    max-width: 100%;
 }
 
 .body table {
     margin: 0 auto;
+    line-height: 1.5em;
 }
 
-@media (min-width: $width-narrow) {
+@media (min-width: variable.$screen-1) {
     #hdl-component-diagram svg {
         float: right;
         margin: -3em 0 0 1em;
-        max-width: 30rem;
+        max-width: 45%;
     }
 }
 
-@media (max-width: $width-narrow) {
-    svg {
-        max-width: 100%;
+@media print {
+    #hdl-component-diagram svg {
+        float: right;
+        margin: -3em 0 0 1em;
+        max-width: 45%;
     }
 }

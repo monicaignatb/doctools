@@ -1,3 +1,5 @@
+@use "variable";
+
 .sig-object {
     font-family: monospace;
     font-size: 1rem;
@@ -15,13 +17,6 @@ em.sig-param, em.property {
     font-style: normal;
 }
 
-.headerlink {
-    color: var(--accent-color);
-    opacity: 0;
-    transition: ease opacity .25s;
-    padding-left: .25em;
-}
-
 .sig-object {
     transition: ease background-color .25s;
     background-color: rgba(125, 125, 125, 0);
@@ -33,6 +28,43 @@ em.sig-param, em.property {
     background-color: rgba(125, 125, 125, 0.1);
 }
 
-.sig-object:hover .headerlink {
-    opacity: 1;
+.code-block-caption {
+    text-align: center;
+    padding-bottom: .25em;
 }
+
+// TODO Port to third-party themes
+.code-shell {
+    background-color: var(--bg-color3);
+    border-radius: variable.$border-radius;
+    padding: .75em;
+    margin-bottom: .5em;
+    user-select: text;
+    overflow-x: scroll;
+
+    .highlight {
+        padding: 0;
+        white-space: collapse;
+        margin: 0;
+        background: none !important;
+        overflow: visible;
+    }
+
+    .float-left {
+        float: left;
+        clear: left;
+        display: inline-block;
+        margin-right: .25em;
+        color: var(--accent-color);
+    }
+
+    pre {
+        margin: 0;
+    }
+
+    .no-select {
+        opacity: 0.8;
+        user-select: none;
+    }
+}
+

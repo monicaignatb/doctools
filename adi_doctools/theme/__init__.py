@@ -1,4 +1,4 @@
-from os import path
+from os import path, getenv
 
 from lxml import etree
 from lxml import html
@@ -11,10 +11,18 @@ from .cosmic import cosmic_setup
 
 
 def theme_config_setup(app):
-    app.add_config_value('repository', None, 'env')
-    app.add_config_value('monolithic', False, 'env')
-    app.add_config_value('doctools_export_metadata', False, 'env')
+    # Name of the repository that this doc belong to
+    app.add_config_value('repository', None, 'env', [str])
+    # Prefix paths with *repos/<repo>*
+    app.add_config_value('monolithic', False, 'env', [bool])
+    # Generate auxiliary metadata files
+    app.add_config_value('export_metadata', False, 'env', [bool])
+    # Hide topics from the toctree expect the current one
+    app.add_config_value('filter_toctree', None, 'env', [bool])
+    # Setup meta tag with target depth
+    app.add_config_value('target_depth', None, 'env', [str])
 
+    app.connect("config-inited", config_inited)
     app.connect("build-finished", build_finished)
 
 
@@ -23,12 +31,35 @@ setup = [
     theme_config_setup
 ]
 
-names = ['cosmic']
+names = ['cosmic', 'harmonic']
+
+
+def config_inited(app, config):
+    """
+    Overwrite theme options with enviroment variables.
+    Config values have higher precedance.
+    Meant for value injection during CI.
+    """
+    if config.filter_toctree is None:
+        ftoc = getenv("ADOC_FILTER_TOCTREE", default="0")
+        config.filter_toctree = True if ftoc == "1" else False
+    else:
+        config.filter_toctree = config.filter_toctree == True
+
+    target_depth = config.target_depth
+    if config.target_depth is None:
+        target_depth = getenv("ADOC_TARGET_DEPTH", default="0")
+        try:
+            target_depth = int(target_depth)
+        except Exception as err:
+            logger.warn(f"ADOC_TARGET_DEPTH '{target_depth}' is not an int.")
+            target_depth = 0
+    config.target_depth = path.join('..', *[".."]*target_depth)
 
 
 def build_finished(app, exc):
     if app.builder.format == 'html' and not exc:
-        if app.env.config.doctools_export_metadata:
+        if app.env.config.export_metadata:
             import json
 
             repos = {}
@@ -58,10 +89,9 @@ def repotoc_tree(content_root, conf_vars, pagename):
     While something with 0 depth is improper:
     hdl-docs.example.com -> ../no-OS -XXX-> hdl-docs.example.com/no-OS
     """
-    repo, repos = conf_vars
+    repo, repos, depth = conf_vars
     root = etree.Element("root")
     home = "index.html"
-    depth = '../'
     current = ''
 
     repository = {}
@@ -76,7 +106,7 @@ def repotoc_tree(content_root, conf_vars, pagename):
 
     repotoc = {**topics, **repository}
     for item in repotoc:
-        href = f"{content_root}{depth}{item}/{home}"
+        href = path.join(content_root, depth, item, home)
         attrib = {}
         if repo is not None and item.startswith(repo):
             if '/' in item:
@@ -110,15 +140,11 @@ def navigation_tree(app, toctree_html, content_root, pagename):
     directive/common.py:directive_base:collapsible.
     Add elements, similar to toos/hdl_render.py:hdl_component.py
     """
-    if not toctree_html:
-        return toctree_html
-
-    parser = etree.HTMLParser()
-    root = etree.fromstring(toctree_html, parser)
 
     conf_vars = (
         app.env.config.repository,
-        app.lut['repos']
+        app.lut['repos'],
+        app.env.config.target_depth
     )
 
     lvl = [0]
@@ -127,33 +153,45 @@ def navigation_tree(app, toctree_html, content_root, pagename):
         i = pagename.find('/')
         return pagename[0:i] if i != -1 else ''
 
-    def filter_tree(root, conf_vars, pagename):
-        repo, repos = conf_vars
-        # Keep unchanged for standalone pages (e.g. /index.html, /search.html)
-        repository = {}
-        topics = {}
-        for key in repos:
-            if repos[key]['visibility'] == 'public':
-                if 'topic' in repos[key]:
-                    topics.update(repos[key]['topic'])
-                else:
-                    repository[key] = repos[key]['name']
-        repotoc = {**topics, **repository}
-        if repo not in repotoc:
+    def filter_toctree(root, pagename):
+        """
+        Filter-out non-current topics/"toctrees-titles".
+        Non-titled toctrees are squashed with the last toctree, e.g.
+         toctrees                          |  visible
+         1, 2, 3 (current)                 -> 1, 2, 3
+         1 (current), 2 Info, 3, 4 User, 5 -> 1
+         1, 2 Info, 3, 4 User (current), 5 -> 4, 5
+         1, 2 Info, 3, 4 User, 5 (current) -> 4, 5
+         1, 2 Info, 3, 4 User, 5           -> 1, 2, 3, 4, 5
+
+        It is done like this because one reason to have multiple toctrees
+        is to tweak the max depth option depending on the content,
+        but still on the same topic.
+        Only the System Level Documentation should have toctrees with captions.
+        """
+        body = root.find('./body')
+
+        found = False
+        #      Current, Elements
+        tocs = [[False, []]]
+        for e in body.getchildren():
+            if e.tag == 'ul':
+                if e.get("class") == "current":
+                    tocs[-1][0] = True
+                    found = True
+            elif e.tag == 'p':
+                tocs.append([False,[]])
+            tocs[-1][1].append(e)
+
+        # If page not on toctree, do not filter
+        # e.g. /index.html, /search.html, orphan
+        if not found:
             return
 
-        # Pop toctrees that are not from the current repo
-        title = repotoc[repo]
-        body = root.find('./body')
-        txt = ''
-        for e in body.getchildren():
-            if e.tag == 'p':
-                span = e.find('./span')
-                if span is not None:
-                    txt = span.text
-                body.remove(e)
-            elif txt != title:
-                body.remove(e)
+        for t in tocs:
+            if t[0] == False:
+                for e in t[1]:
+                    body.remove(e)
 
     def iterate(elem):
         for ul in elem.findall('./ul'):
@@ -193,23 +231,25 @@ def navigation_tree(app, toctree_html, content_root, pagename):
                 iterate(li)
             lvl.pop()
 
-    repo = app.env.config.repository
-    if repo in app.lut['repos'] and "topic" in app.lut['repos'][repo]:
-        conf_vars_ = (get_topic(pagename), *conf_vars[1:])
-        filter_tree(root, conf_vars_, pagename)
+    if toctree_html:
+        parser = etree.HTMLParser()
+        root = etree.fromstring(toctree_html, parser)
 
-    for ul in root.findall('./body/ul'):
-        for li in ul.findall('./li[@class]'):
-            iterate(li)
+        if app.env.config.filter_toctree:
+            filter_toctree(root, pagename)
+        for ul in root.findall('./body/ul'):
+            for li in ul.findall('./li[@class]'):
+                iterate(li)
 
-    _toc_tree = etree.tostring(root, pretty_print=True, encoding='unicode')
+        toctree_html = etree.tostring(root, pretty_print=True, encoding='unicode')
+
     _repotoc_tree, _current = repotoc_tree(content_root, conf_vars, pagename)
     if conf_vars[0] in conf_vars[1]:
         name = conf_vars[1][conf_vars[0]]['name']
     else:
         # If repository entry is not in the lut.py, use the project entry
         name = app.env.config.project
-    return (_toc_tree, _repotoc_tree, name, _current)
+    return (toctree_html, _repotoc_tree, name, _current)
 
 
 def get_pygments_theme(app):
